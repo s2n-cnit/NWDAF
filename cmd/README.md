@@ -1,0 +1,2 @@
+This directory contains the main applications for the project. The directory name should match the desired executable name, such as cmd/app or cmd/scraper.
+This directory contains application-specific entry points (usually one per application or service). It's where you start your application.
