@@ -55,6 +55,8 @@ func LoadConfig() {
 	if err != nil {
 		logrus.Fatalf("Error parsing string to uint16: %v", err)
 	}
+	PrometheusPort = uint16(value)
+	// REDIS USRI
 	RedisURI = getEnv("REDIS_URI", "localhost:6379")
 
 }

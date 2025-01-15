@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"github.com/go-redis/redis/v8"
 	"github.com/hashicorp/go-hclog"
 	"github.com/hashicorp/go-plugin"
@@ -13,6 +14,13 @@ import (
 	"log"
 	"os"
 	"os/exec"
+	"os/signal"
+	"syscall"
+	"time"
+)
+
+const (
+	PluginFolder = "plugin/collectors/build/"
 )
 
 // handshakeConfigs are used to just do a basic handshake between
@@ -25,8 +33,6 @@ var (
 		MagicCookieKey:   "NWDAF_PLUGIN_COOCKIE_KEY",
 		MagicCookieValue: "dsJha6J899JNjudayscn",
 	}
-	// pluginMap is the map of plugins we can dispense.
-	pluginMap        = map[string]plugin.Plugin{"f5gcollector": &shared2.MetricCollectorPlugin{}}
 	redisInitialized = false
 	// Create an hclog.Logger
 	logger = hclog.New(&hclog.LoggerOptions{
@@ -40,38 +46,71 @@ var (
 		Name:        "Free5GC Collector",
 		Description: "Module for NWDAF that collect data from Free5GC and send it to redis 'metric' topic.",
 	}
+	rpcClientList    = make([]*plugin.ClientProtocol, 0)
+	pluginList       = make([]interface{}, 0)
+	scrapingInterval = 60 * time.Second
 )
 
 func main() {
 	configuration.LoadConfig()
 	logger.SetLevel(hclog.Trace)
-	// We're a host! Start by launching the plugin process.
-	client := plugin.NewClient(&plugin.ClientConfig{
-		HandshakeConfig: handshakeConfig,
-		Plugins:         pluginMap,
-		Cmd:             exec.Command("./plugin/BUILD_free5gc_collector_go"),
-		Logger:          logger,
-	})
-	defer client.Kill()
 
-	// Connect via RPC
-	rpcClient, err := client.Client()
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+
+	logger.Info("Starting loading plugins")
+	files, err := os.ReadDir(PluginFolder)
 	if err != nil {
 		log.Fatal(err)
 	}
 
-	// Request the plugin
-	raw, err := rpcClient.Dispense("f5gcollector")
-	if err != nil {
-		log.Fatal(err)
+	for _, file := range files {
+		if !file.IsDir() {
+			// Perform your operations on each file
+			logger.Info("Found plugin:", "file", file.Name())
+
+			//Starting plugins
+			client := plugin.NewClient(&plugin.ClientConfig{
+				HandshakeConfig: handshakeConfig,
+				Plugins:         map[string]plugin.Plugin{file.Name(): &shared2.MetricCollectorPlugin{}},
+				Cmd:             exec.Command(PluginFolder + file.Name()),
+				Logger:          logger,
+			})
+			defer client.Kill()
+			logger.Info("Plugin loaded", "plugin", client)
+
+			// Connect via RPC to the other side
+			rpcClient, err := client.Client()
+			if err != nil {
+				logger.Error("Error starting RPC for", "plugin", client, "error", err)
+			}
+			rpcClientList = append(rpcClientList, &rpcClient)
+			// Requesting the plugin
+			plugin, err := rpcClient.Dispense(file.Name())
+			if err != nil {
+				logger.Error("Error loading remote plugin", "plugin", file.Name(), "error", err)
+			}
+			pluginList = append(pluginList, plugin)
+		}
 	}
 
-	// We should have a Greeter now! This feels like a normal interface
-	// implementation but is in fact over an RPC connection.
-	collector := raw.(shared2.MetricCollector)
-	collectedData := collector.Collect()
+	for {
+		collectedData := make([]models.Metric, 0)
+		for _, plugin := range pluginList {
+			collector := plugin.(shared2.MetricCollector)
+			collectedData = append(collectedData, collector.Collect()...)
+		}
+		PublishOnRedis(collectedData)
 
-	PublishOnRedis(collectedData)
+		select {
+		case <-ctx.Done():
+			logger.Info("Received interrupt signal, shutting down...")
+			return
+		default:
+			logger.Info(fmt.Sprintf("Data collected and sent to redis. Waiting %d seconds before collecting data again...", scrapingInterval))
+			time.Sleep(scrapingInterval)
+		}
+	}
 }
 
 func PublishOnRedis(metrics []models.Metric) {
@@ -84,7 +123,7 @@ func PublishOnRedis(metrics []models.Metric) {
 			logrus.Println("Error serializing metric to JSON:", err)
 		} else {
 			logger.Trace("Serialized metric to JSON:", string(jsonData))
-			err := redisClient.Publish(ctx, "metric", jsonData).Err()
+			err := redisClient.Publish(ctx, "metrics", jsonData).Err()
 			if err != nil {
 				logrus.Println("Error publishing message:", err)
 			}

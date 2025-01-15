@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"github.com/go-redis/redis/v8"
+	"github.com/hashicorp/go-hclog"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"github.com/s2n-cnit/nwdaf/pkg/configuration"
@@ -12,6 +13,7 @@ import (
 	"github.com/s2n-cnit/nwdaf/pkg/models"
 	"github.com/sirupsen/logrus"
 	"net/http"
+	"os"
 )
 
 var (
@@ -27,10 +29,17 @@ var (
 		},
 		[]string{"app"},
 	)
+
+	logger = hclog.New(&hclog.LoggerOptions{
+		Name:   "plugin",
+		Output: os.Stdout,
+		Level:  hclog.Debug,
+	})
 )
 
 func addGaugeMetric(metric models.Metric) prometheus.Collector {
 	if _, exists := metrics_map[metric.Name]; !exists {
+		logger.Debug("Adding metric", "name", metric.Name, "description", metric.Description)
 		var new_gauge = prometheus.NewGaugeVec(
 			prometheus.GaugeOpts{
 				Name: metric.Name,
@@ -45,6 +54,8 @@ func addGaugeMetric(metric models.Metric) prometheus.Collector {
 		metricCounter.WithLabelValues("nwdaf").Inc()
 
 		return new_gauge
+	} else {
+		logger.Debug("Metric is already present, updating it")
 	}
 	return metrics_map[metric.Name]
 }
@@ -73,6 +84,7 @@ func main() {
 
 	// Subscribe to metric and computed metric topics
 	pubsub := rdb.Subscribe(ctx, "metrics", "computedMetrics")
+	logger.Debug("Subscribed to Redis topics", "topics", []string{"metrics", "computedMetrics"})
 
 	// Wait for confirmation that subscription is created
 	_, err := pubsub.Receive(ctx)
@@ -86,7 +98,7 @@ func main() {
 	// Start a HTTP server for exposing Prometheus metrics
 	go func() {
 		http.Handle("/metrics", promhttp.Handler())
-		logrus.Fatal(http.ListenAndServe(fmt.Sprintln(":%d", configuration.PrometheusPort), nil))
+		logrus.Fatal(http.ListenAndServe(fmt.Sprintf(":%d", configuration.PrometheusPort), nil))
 	}()
 
 	prometheus.MustRegister(metricCounter)

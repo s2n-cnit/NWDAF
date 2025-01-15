@@ -12,8 +12,8 @@ import (
 	"strings"
 )
 
-var postURL = "http://192.168.254.193:31682/namf-evts/v1/subscriptions"
-var jsonBody = `{
+var AmfSubURL = "http://192.168.254.193:31682/namf-evts/v1/subscriptions"
+var AmfJsonSubBody = `{
  "subscription": {
    "eventNotifyUri": "http://192.168.254.11:5555",
    "nfId": "046b6c7f-0b8a-43b9-b35d-6489e6daee91",
@@ -70,11 +70,11 @@ var jsonBody = `{
 }`
 
 // Here is a real implementation of Greeter
-type Free5GCollector struct {
+type F5GAmfCollector struct {
 	logger hclog.Logger
 }
 
-var handshakeConfig = plugin.HandshakeConfig{
+var HandShakeConfigAmfCollector = plugin.HandshakeConfig{
 	ProtocolVersion:  1,
 	MagicCookieKey:   "NWDAF_PLUGIN_COOCKIE_KEY",
 	MagicCookieValue: "dsJha6J899JNjudayscn",
@@ -95,7 +95,7 @@ func main() {
 		JSONFormat: true,
 	})
 
-	collector := &Free5GCollector{
+	collector := &F5GAmfCollector{
 		logger: logger,
 	}
 
@@ -104,18 +104,19 @@ func main() {
 	} else {
 		// pluginMap is the map of plugins we can dispense.
 		var pluginMap = map[string]plugin.Plugin{
-			"f5gcollector": &shared.MetricCollectorPlugin{Impl: collector},
+			"F5GC_amf_collector": &shared.MetricCollectorPlugin{Impl: collector},
 		}
+		logger.Info("Offered plugins: ", pluginMap)
 
 		plugin.Serve(&plugin.ServeConfig{
-			HandshakeConfig: handshakeConfig,
+			HandshakeConfig: HandShakeConfigAmfCollector,
 			Plugins:         pluginMap,
 		})
 	}
 }
 
-func (g *Free5GCollector) Collect() []models.Metric {
-	resp, err := http.Post(postURL, "application/json", strings.NewReader(jsonBody))
+func (g *F5GAmfCollector) Collect() []models.Metric {
+	resp, err := http.Post(AmfSubURL, "application/json", strings.NewReader(AmfJsonSubBody))
 	if err != nil {
 		g.logger.Error("Error making POST request:", err)
 	}
@@ -140,7 +141,7 @@ func (g *Free5GCollector) Collect() []models.Metric {
 	return list
 }
 
-func (g *Free5GCollector) BuildMetrics(subscription freemodels.AmfCreatedEventSubscription) map[string]models.Metric {
+func (g *F5GAmfCollector) BuildMetrics(subscription freemodels.AmfCreatedEventSubscription) map[string]models.Metric {
 	metricList := make(map[string]models.Metric)
 	reportList := subscription.ReportList
 	g.logger.Debug("Subscription report list", "reportList", reportList)
@@ -157,7 +158,7 @@ func (g *Free5GCollector) BuildMetrics(subscription freemodels.AmfCreatedEventSu
 	return metricList
 }
 
-func (g *Free5GCollector) UpdateLocationReport(metricMap *map[string]models.Metric, report freemodels.AmfEventReport, nfID string) {
+func (g *F5GAmfCollector) UpdateLocationReport(metricMap *map[string]models.Metric, report freemodels.AmfEventReport, nfID string) {
 	tac := report.Location.NrLocation.Tai.Tac
 	mapValue := *metricMap
 	value, exists := mapValue[tac]
