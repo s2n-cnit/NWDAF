@@ -29,29 +29,26 @@ var AmfJsonSubBody = `{
        "type": "TIMEZONE_REPORT"
    },
    {
-       "type": "ACCESS_TYPE_REPORT"
-   },
-   {
-       "type": "REGISTRATION_STATE_REPORT",
+       "type": "ACCESS_TYPE_REPORT",
 			  "immediateFlag": true
    },
    {
-       "type": "CONNECTIVITY_STATE_REPORT",
-			  "immediateFlag": true
+       "type": "REGISTRATION_STATE_REPORT"
+   },
+   {
+       "type": "CONNECTIVITY_STATE_REPORT"
    },
    {
        "type": "REACHABILITY_REPORT"
    },
    {
-       "type": "SUBSCRIBED_DATA_REPORT",
-			  "immediateFlag": true
+       "type": "SUBSCRIBED_DATA_REPORT"
    },
    {
        "type": "COMMUNICATION_FAILURE_REPORT"
    },
    {
-       "type": "UES_IN_AREA_REPORT",
-			  "immediateFlag": true
+       "type": "UES_IN_AREA_REPORT"
    },
    {
        "type": "SUBSCRIPTION_ID_CHANGE"
@@ -76,7 +73,7 @@ type F5GAmfCollector struct {
 
 var HandShakeConfigAmfCollector = plugin.HandshakeConfig{
 	ProtocolVersion:  1,
-	MagicCookieKey:   "NWDAF_PLUGIN_COOCKIE_KEY",
+	MagicCookieKey:   "NWDAF_PLUGIN_COOKIE_KEY",
 	MagicCookieValue: "dsJha6J899JNjudayscn",
 }
 
@@ -142,20 +139,46 @@ func (g *F5GAmfCollector) Collect() []models.Metric {
 }
 
 func (g *F5GAmfCollector) BuildMetrics(subscription freemodels.AmfCreatedEventSubscription) map[string]models.Metric {
-	metricList := make(map[string]models.Metric)
+	metricMap := make(map[string]models.Metric)
 	reportList := subscription.ReportList
 	g.logger.Debug("Subscription report list", "reportList", reportList)
 	for _, report := range reportList {
 		switch report.Type {
 		case freemodels.AmfEventType_LOCATION_REPORT:
-			g.logger.Trace("BEFOR", metricList)
-			g.UpdateLocationReport(&metricList, report, subscription.Subscription.NfId)
-			g.logger.Trace("AFTER", metricList)
-			//case freemodels.AmfEventType_PRESENCE_IN_AOI_REPORT:
+			g.UpdateLocationReport(&metricMap, report, subscription.Subscription.NfId)
+		case freemodels.AmfEventType_ACCESS_TYPE_REPORT:
+			g.UpdateAccessReport(&metricMap, report, subscription.Subscription.NfId)
 		}
 	}
 
-	return metricList
+	return metricMap
+}
+
+func (g *F5GAmfCollector) UpdateAccessReport(metricMap *map[string]models.Metric, report freemodels.AmfEventReport, nfID string) {
+	accessTypesList := report.AccessTypeList
+	for _, accessType := range accessTypesList {
+		var key string
+		switch accessType {
+		case freemodels.AccessType__3_GPP_ACCESS:
+			key = "3GPP_ACCESS"
+		case freemodels.AccessType_NON_3_GPP_ACCESS:
+			key = "NON_3GPP_ACCESS"
+		}
+		mapValue := *metricMap
+		value, exists := mapValue[key]
+		if exists {
+			value.Value = value.Value + 1
+		} else {
+			value = models.Metric{
+				Name:        key,
+				Description: "Number of devices in 3GPP Access",
+				NFid:        nfID,
+				NFType:      "amf",
+				Value:       1,
+			}
+		}
+		mapValue[key] = value
+	}
 }
 
 func (g *F5GAmfCollector) UpdateLocationReport(metricMap *map[string]models.Metric, report freemodels.AmfEventReport, nfID string) {

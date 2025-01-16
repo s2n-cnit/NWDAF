@@ -30,7 +30,7 @@ const (
 var (
 	handshakeConfig = plugin.HandshakeConfig{
 		ProtocolVersion:  1,
-		MagicCookieKey:   "NWDAF_PLUGIN_COOCKIE_KEY",
+		MagicCookieKey:   "NWDAF_PLUGIN_COOKIE_KEY",
 		MagicCookieValue: "dsJha6J899JNjudayscn",
 	}
 	redisInitialized = false
@@ -46,9 +46,10 @@ var (
 		Name:        "Free5GC Collector",
 		Description: "Module for NWDAF that collect data from Free5GC and send it to redis 'metric' topic.",
 	}
-	rpcClientList    = make([]*plugin.ClientProtocol, 0)
-	pluginList       = make([]interface{}, 0)
-	scrapingInterval = 60 * time.Second
+	rpcClientList           = make([]*plugin.ClientProtocol, 0)
+	pluginList              = make([]interface{}, 0)
+	scrapingIntervalSeconds = 60
+	scrapingInterval        = time.Duration(scrapingIntervalSeconds) * time.Second
 )
 
 func main() {
@@ -107,7 +108,7 @@ func main() {
 			logger.Info("Received interrupt signal, shutting down...")
 			return
 		default:
-			logger.Info(fmt.Sprintf("Data collected and sent to redis. Waiting %d seconds before collecting data again...", scrapingInterval))
+			logger.Info(fmt.Sprintf("Data collected and sent to redis. Waiting %d seconds before collecting data again...", scrapingIntervalSeconds))
 			time.Sleep(scrapingInterval)
 		}
 	}
