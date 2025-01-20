@@ -23,6 +23,7 @@ var (
 	LogLevel       hclog.Level
 	PrometheusPort uint16
 	RedisURI       string
+	NrfURI         string
 )
 
 // LoadConfig loads environment variables and stores them in package-level variables
@@ -58,7 +59,7 @@ func LoadConfig() {
 	PrometheusPort = uint16(value)
 	// REDIS USRI
 	RedisURI = getEnv("REDIS_URI", "localhost:6379")
-
+	NrfURI = getEnv("NRF_URI", "localhost:29510")
 }
 
 // getEnv reads an environment variable or returns a default value if not set

@@ -6,6 +6,7 @@ require (
 	github.com/free5gc/openapi v1.0.8
 	github.com/gin-gonic/gin v1.10.0
 	github.com/go-redis/redis/v8 v8.11.5
+	github.com/google/uuid v1.3.0
 	github.com/hashicorp/go-hclog v1.6.3
 	github.com/hashicorp/go-plugin v1.6.2
 	github.com/joho/godotenv v1.5.1

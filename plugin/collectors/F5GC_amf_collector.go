@@ -160,9 +160,9 @@ func (g *F5GAmfCollector) UpdateAccessReport(metricMap *map[string]models.Metric
 		var key string
 		switch accessType {
 		case freemodels.AccessType__3_GPP_ACCESS:
-			key = "3GPP_ACCESS"
+			key = "F5GC_3GPP_ACCESS"
 		case freemodels.AccessType_NON_3_GPP_ACCESS:
-			key = "NON_3GPP_ACCESS"
+			key = "F5GC_NON_3GPP_ACCESS"
 		}
 		mapValue := *metricMap
 		value, exists := mapValue[key]
