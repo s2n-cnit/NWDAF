@@ -1,6 +1,8 @@
 # NWDAF
 
-
+## Features
+- Registration/Deregistration at NRF
+- 
 
 ## Getting started
 
