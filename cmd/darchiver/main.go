@@ -17,107 +17,123 @@ import (
 )
 
 var (
-	metrics_map = make(map[string]prometheus.Collector)
-
-	ctx = context.Background()
-
-	// Define a Prometheus counter metric
-	metricCounter = prometheus.NewCounterVec(
+	MetricCollectorMap = make(map[string]models.MetricAndCollector)
+	collectorMap       = make(map[string]prometheus.Collector)
+	ctx                = context.Background()
+	metricCounter      = prometheus.NewCounterVec(
 		prometheus.CounterOpts{
 			Name: "metric_number",
 			Help: "Total number of metrics received",
 		},
 		[]string{"app"},
 	)
-
 	logger = hclog.New(&hclog.LoggerOptions{
-		Name:   "plugin",
+		Name:   "Data Archiver",
 		Output: os.Stdout,
 		Level:  hclog.Debug,
 	})
 )
 
 func addGaugeMetric(metric models.Metric) prometheus.Collector {
-	if _, exists := metrics_map[metric.Name]; !exists {
-		logger.Debug("Adding metric", "name", metric.Name, "description", metric.Description)
-		var new_gauge = prometheus.NewGaugeVec(
-			prometheus.GaugeOpts{
-				Name: metric.Name,
-				Help: metric.Description,
-			},
-			[]string{"app"},
-		)
-		metrics_map[metric.Name] = new_gauge
-		prometheus.MustRegister(new_gauge)
+	logger.Debug("Adding metric", "name", metric.Name, "description", metric.Description)
+	newGauge := prometheus.NewGaugeVec(
+		prometheus.GaugeOpts{
+			Name: metric.Name,
+			Help: metric.Description,
+		},
+		[]string{"app"},
+	)
+	collectorMap[metric.Name] = newGauge
+	prometheus.MustRegister(newGauge)
+	metricCounter.WithLabelValues("nwdaf").Inc()
+	return newGauge
+}
 
-		// Increment the Prometheus counter
-		metricCounter.WithLabelValues("nwdaf").Inc()
+func deleteGaugeMetric(name string) {
+	logger.Debug("Unregistering metric", "name", name)
+	prometheus.Unregister(collectorMap[name])
+}
 
-		return new_gauge
-	} else {
-		logger.Debug("Metric is already present, updating it")
+func updateGaugeValue(vec *prometheus.GaugeVec, value float64) {
+	vec.WithLabelValues("nwdaf").Set(value)
+}
+
+func AddMetric(metric models.Metric) models.MetricAndCollector {
+	if value, exists := MetricCollectorMap[metric.Name]; exists {
+		updateGaugeValue(value.Collector.(*prometheus.GaugeVec), metric.Value)
+		return value
 	}
-	return metrics_map[metric.Name]
-}
-
-func getMetric(name string) prometheus.Collector {
-	if _, exists := metrics_map[name]; exists {
-		return metrics_map[name]
+	logger.Debug("Adding metric", "name", metric.Name, "description", metric.Description)
+	MetricCollectorMap[metric.Name] = models.MetricAndCollector{
+		Metric:    metric,
+		Collector: addGaugeMetric(metric),
 	}
-	return nil
+	return MetricCollectorMap[metric.Name]
 }
 
-func removeMetric(name string) {
-	prometheus.Unregister(metrics_map[name])
-	delete(metrics_map, name)
+func DeleteMetric(name string) {
+	if _, exists := MetricCollectorMap[name]; exists {
+		logger.Debug("Removing metric", "name", name)
+		deleteGaugeMetric(name)
+		delete(MetricCollectorMap, name)
+	}
 }
 
-func main() {
+func GetMetric(name string) models.Metric {
+	if value, exists := MetricCollectorMap[name]; exists {
+		return value.Metric
+	}
+	return models.Metric{}
+}
+
+func GetMetricList() []string {
+	metricList := make([]string, 0, len(collectorMap))
+	for key := range collectorMap {
+		metricList = append(metricList, MetricCollectorMap[key].Metric.Name)
+	}
+	return metricList
+}
+
+func Start() {
 	configuration.LoadConfig()
 	log.LogSetup(logrus.Level(configuration.LogLevel))
 	defer log.LogClose()
 
-	// Initialize Redis client to listen at collected metrics
 	rdb := redis.NewClient(&redis.Options{
-		Addr: configuration.RedisURI, // Redis server address
+		Addr: configuration.RedisURI,
 	})
 
-	// Subscribe to metric and computed metric topics
 	pubsub := rdb.Subscribe(ctx, "metrics", "computedMetrics")
 	logger.Debug("Subscribed to Redis topics", "topics", []string{"metrics", "computedMetrics"})
 
-	// Wait for confirmation that subscription is created
-	_, err := pubsub.Receive(ctx)
-	if err != nil {
+	if _, err := pubsub.Receive(ctx); err != nil {
 		logrus.Fatal(err)
 	}
 
-	// Create a channel to receive messages
 	ch := pubsub.Channel()
 
-	// Start a HTTP server for exposing Prometheus metrics
 	go func() {
 		http.Handle("/metrics", promhttp.Handler())
-		logrus.Fatal(http.ListenAndServe(fmt.Sprintf(":%d", configuration.PrometheusPort), nil))
+		uri := fmt.Sprintf(":%d", configuration.PrometheusPort)
+		logger.Info("Starting Prometheus metric exporter", "uri", uri)
+		logrus.Fatal(http.ListenAndServe(uri, nil))
 	}()
 
 	prometheus.MustRegister(metricCounter)
 
-	// Listen for messages
 	for msg := range ch {
 		fmt.Println("Received message from topic:", msg.Channel, "Message:", msg.Payload)
 
 		var metric models.Metric
-		err := json.Unmarshal([]byte(msg.Payload), &metric)
-		if err != nil {
+		if err := json.Unmarshal([]byte(msg.Payload), &metric); err != nil {
 			logrus.Println("Error unmarshalling message payload:", err)
 			continue
 		}
 		fmt.Println("Received metric:", metric)
-
-		var collector = addGaugeMetric(metric)
-
-		vec := collector.(*prometheus.GaugeVec)
-		vec.WithLabelValues("nwdaf").Set(metric.Value)
+		AddMetric(metric)
 	}
+}
+
+func main() {
+	Start()
 }
