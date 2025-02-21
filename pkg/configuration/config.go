@@ -23,6 +23,7 @@ var (
 	LogLevel       hclog.Level
 	PrometheusPort uint16
 	RedisURI       string
+	RedisPassword  string
 	NrfURI         string
 )
 
@@ -35,35 +36,36 @@ func LoadConfig() {
 	}
 
 	// Load environment variables into package-level variables
-	MongoUsername = getEnv("MONGO_USERNAME", "")
-	MongoPassword = getEnv("MONGO_PASSWORD", "")
-	MongoURI = getEnv("MONGO_URI", "mongodb://localhost:27017")
-	DatabaseName = getEnv("DATABASE_NAME", "nwdaf")
-	Collection = getEnv("COLLECTION_NAME", "undefined")
-	Port = getEnv("PORT", "8080")
-	BindIP = getEnv("BIND_IP", "0.0.0.0")
-	CertFile = getEnv("TLS_CERT_FILE", "certs/server.crt")
-	KeyFile = getEnv("TLS_KEY_FILE", "certs/server.key")
-	TrustedProxies = strings.Split(strings.ReplaceAll(getEnv("TRUSTED_PROXIES", "192.168.0.0/16, 127.0.0.1/32"), " ", ""), ",")
+	MongoUsername = GetEnv("MONGO_USERNAME", "")
+	MongoPassword = GetEnv("MONGO_PASSWORD", "")
+	MongoURI = GetEnv("MONGO_URI", "mongodb://localhost:27017")
+	DatabaseName = GetEnv("DATABASE_NAME", "nwdaf")
+	Collection = GetEnv("COLLECTION_NAME", "undefined")
+	Port = GetEnv("PORT", "8080")
+	BindIP = GetEnv("BIND_IP", "0.0.0.0")
+	CertFile = GetEnv("TLS_CERT_FILE", "certs/server.crt")
+	KeyFile = GetEnv("TLS_KEY_FILE", "certs/server.key")
+	TrustedProxies = strings.Split(strings.ReplaceAll(GetEnv("TRUSTED_PROXIES", "192.168.0.0/16, 127.0.0.1/32"), " ", ""), ",")
 	// LOG_LEVEL is a string, so we need to convert it to uint32
-	value, err := strconv.ParseUint(getEnv("LOG_LEVEL", "1"), 10, 32) // Trace Level
+	value, err := strconv.ParseUint(GetEnv("LOG_LEVEL", "1"), 10, 32) // Trace Level
 	if err != nil {
 		logrus.Fatalf("Error parsing string to uint32: %v", err)
 	}
 	LogLevel = hclog.Level(uint32(value))
 	// PROMETHEUS_PORT is a string, so we need to convert it to uint16
-	value, err = strconv.ParseUint(getEnv("PROMETHEUS_PORT", "2112"), 10, 16)
+	value, err = strconv.ParseUint(GetEnv("PROMETHEUS_PORT", "2112"), 10, 16)
 	if err != nil {
 		logrus.Fatalf("Error parsing string to uint16: %v", err)
 	}
 	PrometheusPort = uint16(value)
 	// REDIS USRI
-	RedisURI = getEnv("REDIS_URI", "localhost:6379")
-	NrfURI = getEnv("NRF_URI", "localhost:29510")
+	RedisURI = GetEnv("REDIS_URI", "localhost:6379")
+	NrfURI = GetEnv("NRF_URI", "localhost:29510")
+	RedisPassword = GetEnv("REDIS_PASSWORD", "")
 }
 
-// getEnv reads an environment variable or returns a default value if not set
-func getEnv(key, defaultValue string) string {
+// GetEnv reads an environment variable or returns a default value if not set
+func GetEnv(key, defaultValue string) string {
 	value, exists := os.LookupEnv(key)
 	if !exists {
 		return defaultValue

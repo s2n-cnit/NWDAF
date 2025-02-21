@@ -66,7 +66,6 @@ var AmfJsonSubBody = `{
  }
 }`
 
-// Here is a real implementation of Greeter
 type F5GAmfCollector struct {
 	logger hclog.Logger
 }
@@ -96,6 +95,7 @@ func main() {
 		logger: logger,
 	}
 
+	// If run as a standalone program, collect metrics locally, if loaded as a plugin, serve the plugin
 	if debug_locally {
 		collector.Collect()
 	} else {
@@ -113,10 +113,12 @@ func main() {
 }
 
 func (g *F5GAmfCollector) Collect() []models.Metric {
+	// Make a POST request to the AMF to subscribe to events (one time mode = polling)
 	resp, err := http.Post(AmfSubURL, "application/json", strings.NewReader(AmfJsonSubBody))
 	if err != nil {
 		g.logger.Error("Error making POST request:", err)
 	}
+	// When the function terminate the close is called
 	defer resp.Body.Close()
 
 	g.logger.Debug("Response body:", resp.Body)
@@ -127,9 +129,10 @@ func (g *F5GAmfCollector) Collect() []models.Metric {
 		g.logger.Error("Error decoding JSON response:", err)
 	}
 
+	// After response is decoded, build the metrics as a standard NWDAF model
 	metrics_map := g.BuildMetrics(result)
 
-	// Preallocate the slice with the length of the map for better performance
+	// Preallocate the list with the length of the map for better performance
 	list := make([]models.Metric, 0, len(metrics_map))
 	for _, value := range metrics_map {
 		list = append(list, value)
@@ -182,6 +185,7 @@ func (g *F5GAmfCollector) UpdateAccessReport(metricMap *map[string]models.Metric
 }
 
 func (g *F5GAmfCollector) UpdateLocationReport(metricMap *map[string]models.Metric, report freemodels.AmfEventReport, nfID string) {
+
 	tac := report.Location.NrLocation.Tai.Tac
 	mapValue := *metricMap
 	value, exists := mapValue[tac]

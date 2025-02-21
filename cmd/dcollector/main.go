@@ -73,9 +73,17 @@ func Start() {
 	}
 }
 
+// LoadPlugin loads a plugin from the specified file and returns the plugin client.
+//
+// Parameters:
+// - file: The file entry representing the plugin to be loaded.
+//
+// Returns:
+// - A pointer to the plugin.Client representing the loaded plugin.
 func LoadPlugin(file os.DirEntry) *plugin.Client {
 	logger.Info("Found plugin:", "file", file.Name())
 
+	// Create a new plugin client with the specified configuration.
 	client := plugin.NewClient(&plugin.ClientConfig{
 		HandshakeConfig: handshakeConfig,
 		Plugins:         map[string]plugin.Plugin{file.Name(): &shared2.MetricCollectorPlugin{}},
@@ -84,12 +92,14 @@ func LoadPlugin(file os.DirEntry) *plugin.Client {
 	})
 	logger.Info("Plugin loaded", "plugin", client)
 
+	// Start the RPC client for the plugin.
 	rpcClient, err := client.Client()
 	if err != nil {
 		logger.Error("Error starting RPC for", "plugin", client, "error", err)
 	}
 	rpcClientList = append(rpcClientList, &rpcClient)
 
+	// Dispense the plugin and add it to the plugin list.
 	plugin, err := rpcClient.Dispense(file.Name())
 	if err != nil {
 		logger.Error("Error loading remote plugin", "plugin", file.Name(), "error", err)
@@ -98,16 +108,24 @@ func LoadPlugin(file os.DirEntry) *plugin.Client {
 	return client
 }
 
+// PublishOnRedis publishes the given metrics to the Redis "metrics" topic.
+//
+// Parameters:
+// - metrics: A slice of Metric objects to be published.
 func PublishOnRedis(metrics []models.Metric) {
+	// Initialize Redis if it hasn't been initialized yet.
 	if !redisInitialized {
 		InitializeRedis()
 	}
+	// Iterate over each metric and publish it to Redis.
 	for _, metric := range metrics {
+		// Serialize the metric to JSON.
 		jsonData, err := json.Marshal(metric)
 		if err != nil {
 			log.Println("Error serializing metric to JSON:", err)
 		} else {
 			logger.Trace("Serialized metric to JSON:", string(jsonData))
+			// Publish the serialized metric to the "metrics" topic.
 			err := redisClient.Publish(ctx, "metrics", jsonData).Err()
 			if err != nil {
 				log.Println("Error publishing message:", err)
@@ -116,21 +134,35 @@ func PublishOnRedis(metrics []models.Metric) {
 	}
 }
 
+// InitializeRedis initializes the Redis client and publishes module information.
+//
+// This function sets up the Redis client with the configuration specified in the
+// configuration package and publishes the module information to the "module" topic.
 func InitializeRedis() {
+	// Create a new context for Redis operations.
 	ctx = context.Background()
+	// Create a new Redis client with the specified options.
 	redisClient = redis.NewClient(&redis.Options{
 		Addr: configuration.RedisURI,
 	})
+	// Set the Redis password if it is specified in the configuration.
+	if configuration.RedisPassword != "" {
+		redisClient.Options().Password = configuration.RedisPassword
+	}
+	//Serialize the module information to JSON.
 	value, err := json.Marshal(moduleInfo)
 	if err == nil {
+		// Publish the module information to the "module" topic.
 		err = redisClient.Publish(ctx, "module", value).Err()
 		if err != nil {
 			log.Println("Error publishing message:", err)
 		}
 	}
+	// Mark Redis as initialized.
 	redisInitialized = true
 }
 
+// main is the entry point of the application.
 func main() {
 	Start()
 }

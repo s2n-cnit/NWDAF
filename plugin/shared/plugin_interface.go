@@ -8,12 +8,14 @@ import (
 
 // MetricCollector is the interface that we're exposing as a plugin.
 type MetricCollector interface {
+	// Collect gathers metrics and returns a slice of Metric objects.
 	Collect() []models.Metric
 }
 
-// Here is an implementation that talks over RPC
+// MetricCollectorRPC is the implementation of the MetricCollector interface over RPC.
 type MetricCollectorRPC struct{ client *rpc.Client }
 
+// Collect calls the remote Collect method via RPC and returns the collected metrics.
 func (g *MetricCollectorRPC) Collect() []models.Metric {
 	var resp []models.Metric
 	err := g.client.Call("Plugin.Collect", new(interface{}), &resp)
@@ -26,37 +28,31 @@ func (g *MetricCollectorRPC) Collect() []models.Metric {
 	return resp
 }
 
-// Here is the RPC server that MetricCollectorRPC talks to, conforming to
-// the requirements of net/rpc
+// MetricCollectorRPCServer is the RPC server that MetricCollectorRPC talks to,
+// conforming to the requirements of net/rpc.
 type MetricCollectorRPCServer struct {
-	// This is the real implementation
+	// Impl is the real implementation of the MetricCollector interface.
 	Impl MetricCollector
 }
 
+// Collect calls the Collect method on the real implementation and sets the response.
 func (s *MetricCollectorRPCServer) Collect(args interface{}, resp *[]models.Metric) error {
 	*resp = s.Impl.Collect()
 	return nil
 }
 
-// This is the implementation of plugin.Plugin so we can serve/consume this
-//
-// This has two methods: Server must return an RPC server for this plugin
-// type. We construct a MetricCollectorRPCServer for this.
-//
-// Client must return an implementation of our interface that communicates
-// over an RPC client. We return MetricCollectorRPC for this.
-//
-// Ignore MuxBroker. That is used to create more multiplexed streams on our
-// plugin connection and is a more advanced use case.
+// MetricCollectorPlugin is the plugin implementation for MetricCollector.
 type MetricCollectorPlugin struct {
-	// Impl Injection
+	// Impl is the injected implementation of the MetricCollector interface.
 	Impl MetricCollector
 }
 
+// Server returns an RPC server for the MetricCollector.
 func (p *MetricCollectorPlugin) Server(*plugin.MuxBroker) (interface{}, error) {
 	return &MetricCollectorRPCServer{Impl: p.Impl}, nil
 }
 
+// Client returns an RPC client for the MetricCollector.
 func (MetricCollectorPlugin) Client(b *plugin.MuxBroker, c *rpc.Client) (interface{}, error) {
 	return &MetricCollectorRPC{client: c}, nil
 }
