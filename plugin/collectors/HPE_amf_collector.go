@@ -7,7 +7,7 @@ import (
 	"github.com/s2n-cnit/nwdaf/pkg/configuration"
 	http_internal "github.com/s2n-cnit/nwdaf/pkg/http-internal"
 	"github.com/s2n-cnit/nwdaf/pkg/models"
-	"github.com/s2n-cnit/nwdaf/plugin/shared"
+	"github.com/s2n-cnit/nwdaf/plugin/plugin_shared"
 	"os"
 )
 
@@ -27,10 +27,10 @@ var HandShakeConfigHPEAmfCollector = plugin.HandshakeConfig{
 }
 
 func (collector *HPEAmfCollector) get_evn() {
-	collector.coreIp = configuration.GetEnv("HPE_CORE_IP", "")
-	collector.username = configuration.GetEnv("HPE_USERNAME", "")
-	collector.password = configuration.GetEnv("HPE_PASSWORD", "")
-	collector.metricPrefix = configuration.GetEnv("HPE_METRIC_PREFIX", "HPE_CORE_")
+	collector.coreIp = configuration.GetEnv(plugin_shared.EnvHpeCoreIp, "")
+	collector.username = configuration.GetEnv(plugin_shared.EnvHpeUsername, "")
+	collector.password = configuration.GetEnv(plugin_shared.EnvHpePassword, "")
+	collector.metricPrefix = configuration.GetEnv(plugin_shared.EnvHpeMetricPrefix, "HPE_CORE_")
 	if collector.coreIp == "" || collector.username == "" || collector.password == "" {
 		collector.logger.Error("Missing HPE environment variables")
 		os.Exit(1)
@@ -78,6 +78,10 @@ func (collector *HPEAmfCollector) Collect() []models.Metric {
 	}
 
 	return supiNumMetric
+}
+
+func (collector *HPEAmfCollector) GetRequiredEnvVars() []string {
+	return plugin_shared.HPERequiredEnvVars
 }
 
 func (collector *HPEAmfCollector) CollectSupiInfo() []models.Metric {
@@ -139,11 +143,12 @@ func main() {
 	collector.Login()
 
 	if debug_locally {
+		collector.GetRequiredEnvVars()
 		collector.Collect()
 	} else {
 		// pluginMap is the map of plugins we can dispense.
 		var pluginMap = map[string]plugin.Plugin{
-			"HPE_amf_collector": &shared.MetricCollectorPlugin{Impl: collector},
+			"HPE_amf_collector": &plugin_shared.MetricCollectorPlugin{Impl: collector},
 		}
 		logger.Info("Offered plugins: ", pluginMap)
 

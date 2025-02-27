@@ -1,3 +1,5 @@
+// Package nrf provides the models for the Network Repository Function (NRF).
+// This has been tested with the NRF in the free5gc project.
 package nrf
 
 import (
@@ -8,20 +10,28 @@ import (
 	"github.com/free5gc/openapi/models"
 	"github.com/google/uuid"
 	"github.com/hashicorp/go-hclog"
-	"github.com/s2n-cnit/nwdaf/pkg/configuration"
 	"net/http"
 )
 
+// NRFClient represents a client for interacting with the Network Repository Function (NRF).
 type NRFClient struct {
-	NRFUri string
-	Logger hclog.Logger
+	NRFIp  string       // IP address of the NRF
+	Logger hclog.Logger // Logger for logging messages
 }
 
+// NRFResponse represents the response from the NRF.
 type NRFResponse struct {
-	validityPeriod int
-	nfInstances    []models.NfProfile
+	validityPeriod int                // Validity period of the response
+	nfInstances    []models.NfProfile // List of NF profiles
 }
 
+// RegisterToNRF registers the NF instance to the NRF.
+//
+// Parameters:
+// - nfInstanceID: UUID of the NF instance
+// - address: IP address of the NF instance
+//
+// Returns an error if the registration fails.
 func (nrfClient *NRFClient) RegisterToNRF(nfInstanceID uuid.UUID, address models.IpAddress) error {
 	profile := models.NfProfile{
 		NfInstanceId:  nfInstanceID.String(),
@@ -29,7 +39,7 @@ func (nrfClient *NRFClient) RegisterToNRF(nfInstanceID uuid.UUID, address models
 		NfStatus:      "REGISTERED",
 		Ipv4Addresses: []string{address.Ipv4Addr},
 	}
-	uri := fmt.Sprintf("http://%v/nnrf-nfm/v1/nf-instances/%v", configuration.NrfURI, nfInstanceID.String())
+	uri := fmt.Sprintf("http://%v/nnrf-nfm/v1/nf-instances/%v", nrfClient.NRFIp, nfInstanceID.String())
 
 	reqBody, err := json.Marshal(profile)
 	if err != nil {
@@ -61,8 +71,14 @@ func (nrfClient *NRFClient) RegisterToNRF(nfInstanceID uuid.UUID, address models
 	return nil
 }
 
+// DeregisterFromNRF deregisters the NF instance from the NRF.
+//
+// Parameters:
+// - nfInstanceID: UUID of the NF instance
+//
+// Returns an error if the deregistration fails.
 func (nrfClient *NRFClient) DeregisterFromNRF(nfInstanceID uuid.UUID) error {
-	uri := fmt.Sprintf("http://%v/nnrf-nfm/v1/nf-instances/%v", configuration.NrfURI, nfInstanceID.String())
+	uri := fmt.Sprintf("http://%v/nnrf-nfm/v1/nf-instances/%v", nrfClient.NRFIp, nfInstanceID.String())
 	req, err := http.NewRequest(http.MethodDelete, uri, nil)
 	if err != nil {
 		nrfClient.Logger.Error("Error creating DELETE request:", err)
@@ -86,12 +102,17 @@ func (nrfClient *NRFClient) DeregisterFromNRF(nfInstanceID uuid.UUID) error {
 	return nil
 }
 
+// GetNFInstances retrieves NF instances of the specified type from the NRF.
+//
+// Parameters:
+// - nfType: Type of the NF instances to retrieve
+//
+// Returns a slice of NF profiles and an error if the retrieval fails.
 func (nrfClient *NRFClient) GetNFInstances(nfType models.NfType) ([]models.NfProfile, error) {
-	//http://192.168.254.193:32147/nnrf-disc/v1/nf-instances?target-nf-type=AMF&requester-nf-type=NWDAF
 	if nfType == "" {
 		return nil, errors.New("nfType is empty")
 	}
-	uri := fmt.Sprintf("http://%v/nnrf-disc/v1/nf-instances?target-nf-type=%v&requester-nf-type=NWDAF", configuration.NrfURI, nfType)
+	uri := fmt.Sprintf("http://%v/nnrf-disc/v1/nf-instances?target-nf-type=%v&requester-nf-type=NWDAF", nrfClient.NRFIp, nfType)
 	resp, err := http.Get(uri)
 	if err != nil {
 		nrfClient.Logger.Error("Error making GET request:", err)

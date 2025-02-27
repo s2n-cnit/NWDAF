@@ -1,47 +1,47 @@
 package main
 
 import (
-	"context"
 	"encoding/json"
 	"fmt"
-	"github.com/go-redis/redis/v8"
 	"github.com/hashicorp/go-hclog"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"github.com/s2n-cnit/nwdaf/pkg/configuration"
 	"github.com/s2n-cnit/nwdaf/pkg/models"
+	"github.com/s2n-cnit/nwdaf/pkg/redis_custom"
 	"github.com/sirupsen/logrus"
 	"net/http"
 	"os"
 )
 
 var (
-	MetricCollectorMap = make(map[string]models.MetricAndCollector)
-	collectorMap       = make(map[string]prometheus.Collector)
-	ctx                = context.Background()
-	metricCounter      = prometheus.NewCounterVec(
+	// MetricAndCollectorMap is a map of metric names to their corresponding MetricAndCollector objects.
+	MetricAndCollectorMap = make(map[string]models.MetricAndCollector)
+	// metricCounter is a Prometheus counter metric for the total number of metrics received.
+	metricCounter = prometheus.NewCounterVec(
 		prometheus.CounterOpts{
 			Name: "metric_number",
 			Help: "Total number of metrics received",
 		},
 		[]string{"app"},
 	)
-	logger = hclog.New(&hclog.LoggerOptions{
-		Name:   "Data Archiver",
-		Output: os.Stdout,
-		Level:  hclog.Debug,
-	})
+	// logger is the global logger for the Data Archiver module.
+	logger      hclog.Logger
+	redisClient redis_custom.RedisClient
+	moduleInfo  = models.Module{
+		Name:        "Data Archiver",
+		Description: "Module for NWDAF that listen to Redis Events and archive metrics.",
+	}
 )
 
-// addGaugeMetric adds a new Prometheus gauge metric and registers it.
+// newGaugeCollector generates a new Prometheus gauge metric.
 //
 // Parameters:
 // - metric: The Metric object containing the name and description of the metric.
 //
 // Returns:
 // - A prometheus.Collector representing the newly created gauge metric.
-func addGaugeMetric(metric models.Metric) prometheus.Collector {
-	logger.Debug("Adding metric", "name", metric.Name, "description", metric.Description)
+func newGaugeCollector(metric models.Metric) prometheus.Collector {
 	newGauge := prometheus.NewGaugeVec(
 		prometheus.GaugeOpts{
 			Name: metric.Name,
@@ -49,19 +49,20 @@ func addGaugeMetric(metric models.Metric) prometheus.Collector {
 		},
 		[]string{"app"},
 	)
-	collectorMap[metric.Name] = newGauge
 	prometheus.MustRegister(newGauge)
 	metricCounter.WithLabelValues("nwdaf").Inc()
 	return newGauge
 }
 
-// deleteGaugeMetric unregisters and deletes a Prometheus gauge metric.
+// deleteMetric unregisters and deletes a Prometheus metric.
 //
 // Parameters:
 // - name: The name of the metric to be deleted.
-func deleteGaugeMetric(name string) {
+func deleteMetric(name string) {
 	logger.Debug("Unregistering metric", "name", name)
-	prometheus.Unregister(collectorMap[name])
+	metricAndCollector := MetricAndCollectorMap[name]
+	prometheus.Unregister(metricAndCollector.Collector)
+	delete(MetricAndCollectorMap, name)
 }
 
 // updateGaugeValue updates the value of a Prometheus gauge metric.
@@ -81,27 +82,28 @@ func updateGaugeValue(vec *prometheus.GaugeVec, value float64) {
 // Returns:
 // - A MetricAndCollector object containing the added or updated metric and its collector.
 func AddMetric(metric models.Metric) models.MetricAndCollector {
-	if value, exists := MetricCollectorMap[metric.Name]; exists {
+	if value, exists := MetricAndCollectorMap[metric.Name]; exists {
 		updateGaugeValue(value.Collector.(*prometheus.GaugeVec), metric.Value)
 		return value
 	}
 	logger.Debug("Adding metric", "name", metric.Name, "description", metric.Description)
-	MetricCollectorMap[metric.Name] = models.MetricAndCollector{
+	MetricAndCollectorMap[metric.Name] = models.MetricAndCollector{
 		Metric:    metric,
-		Collector: addGaugeMetric(metric),
+		Collector: newGaugeCollector(metric),
 	}
-	return MetricCollectorMap[metric.Name]
+	return MetricAndCollectorMap[metric.Name]
 }
 
-// DeleteMetric deletes a metric from the MetricCollectorMap.
+// DeleteMetric deletes a metric from the MetricAndCollectorMap.
 //
 // Parameters:
 // - name: The name of the metric to be deleted.
 func DeleteMetric(name string) {
-	if _, exists := MetricCollectorMap[name]; exists {
+	if _, exists := MetricAndCollectorMap[name]; exists {
 		logger.Debug("Removing metric", "name", name)
-		deleteGaugeMetric(name)
-		delete(MetricCollectorMap, name)
+		deleteMetric(name)
+	} else {
+		logger.Error("Metric not found", "name", name)
 	}
 }
 
@@ -113,7 +115,7 @@ func DeleteMetric(name string) {
 // Returns:
 // - A Metric object representing the retrieved metric.
 func GetMetric(name string) models.Metric {
-	if value, exists := MetricCollectorMap[name]; exists {
+	if value, exists := MetricAndCollectorMap[name]; exists {
 		return value.Metric
 	}
 	return models.Metric{}
@@ -124,9 +126,9 @@ func GetMetric(name string) models.Metric {
 // Returns:
 // - A slice of strings containing the names of all metrics.
 func GetMetricList() []string {
-	metricList := make([]string, 0, len(collectorMap))
-	for key := range collectorMap {
-		metricList = append(metricList, MetricCollectorMap[key].Metric.Name)
+	metricList := make([]string, 0, len(MetricAndCollectorMap))
+	for key := range MetricAndCollectorMap {
+		metricList = append(metricList, MetricAndCollectorMap[key].Metric.Name)
 	}
 	return metricList
 }
@@ -134,19 +136,30 @@ func GetMetricList() []string {
 // Start initializes the configuration, subscribes to Redis topics, and starts the Prometheus metric exporter.
 func Start() {
 	// Load the configuration settings.
-	configuration.LoadConfig()
-
-	// Create a new Redis client with the specified options.
-	rdb := redis.NewClient(&redis.Options{
-		Addr: configuration.RedisURI,
+	configuration.LoadEnv()
+	// Set the logging level based on the environment variable.
+	logLevel := hclog.Level(configuration.GetEnvInt(configuration.EnvLogLevel, int(hclog.Debug)))
+	logger = hclog.New(&hclog.LoggerOptions{
+		Name:   "Data Archiver",
+		Output: os.Stdout,
+		Level:  logLevel,
 	})
 
+	// Create a new Redis client with the specified options.
+	redisUri := configuration.GetEnvStrNoDefault(configuration.EnvRedisUri)
+	if redisUri == nil {
+		logger.Error("Redis URI not set. Missing ENV ", configuration.EnvRedisUri)
+		os.Exit(1)
+	}
+	redis_pwd := configuration.GetEnvStrNoDefault(configuration.EnvRedisPassword)
+	redisClient = redis_custom.NewCustomClient("Data Archiver", logLevel, *redisUri, redis_pwd, &moduleInfo)
+
 	// Subscribe to the "metrics" and "computedMetrics" Redis topics.
-	pubsub := rdb.Subscribe(ctx, "metrics", "computedMetrics")
+	pubsub := *redisClient.Subscribe("metrics", "computedMetrics")
 	logger.Debug("Subscribed to Redis topics", "topics", []string{"metrics", "computedMetrics"})
 
 	// Wait for the subscription to be established.
-	if _, err := pubsub.Receive(ctx); err != nil {
+	if _, err := pubsub.Receive(redisClient.Ctx); err != nil {
 		logrus.Fatal(err)
 	}
 
@@ -155,9 +168,10 @@ func Start() {
 
 	// Start a goroutine to handle Prometheus metrics endpoint.
 	go func() {
+		prometheusPort := configuration.GetEnvInt(configuration.EnvPrometheusLocalPort, 2112)
 		// Handle HTTP requests for the "/metrics" endpoint using the Prometheus handler.
 		http.Handle("/metrics", promhttp.Handler())
-		uri := fmt.Sprintf(":%d", configuration.PrometheusPort)
+		uri := fmt.Sprintf(":%d", prometheusPort)
 		logger.Info("Starting Prometheus metric exporter", "uri", uri)
 		logrus.Fatal(http.ListenAndServe(uri, nil))
 	}()
@@ -167,7 +181,7 @@ func Start() {
 
 	// Process messages received from the Redis topics.
 	for msg := range ch {
-		fmt.Println("Received message from topic:", msg.Channel, "Message:", msg.Payload)
+		logger.Debug("Received message from topic", "topic", msg.Channel, "message", msg.Payload)
 
 		// Unmarshal the message payload into a Metric object.
 		var metric models.Metric
@@ -175,7 +189,7 @@ func Start() {
 			logrus.Println("Error unmarshalling message payload:", err)
 			continue
 		}
-		fmt.Println("Received metric:", metric)
+		logger.Debug("Metric Detected", "metric", metric)
 		// Add or update the received metric.
 		AddMetric(metric)
 	}

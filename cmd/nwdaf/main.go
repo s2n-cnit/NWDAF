@@ -1,3 +1,10 @@
+// Package main implements the Network Data Analytics Function (NWDAF) service.
+//
+// NWDAF is a 5G core network function that collects and analyzes data from various
+// network slices. It manages multiple microservices for data collection and archiving,
+// and integrates with the Network Repository Function (NRF) for service registration.
+// The actual implementation starts the darchiver and dcollectors microservices, which
+
 package main
 
 import (
@@ -7,7 +14,7 @@ import (
 	"github.com/hashicorp/go-hclog"
 	"github.com/s2n-cnit/nwdaf/pkg/configuration"
 	"github.com/s2n-cnit/nwdaf/pkg/nrf"
-	"log"
+	"github.com/s2n-cnit/nwdaf/plugin/plugin_shared"
 	"os"
 	"os/exec"
 	"os/signal"
@@ -15,41 +22,93 @@ import (
 )
 
 var (
-	logger        = hclog.New(&hclog.LoggerOptions{Name: "NWDAF", Output: os.Stdout, Level: hclog.Debug})
-	darchiverCmd  *exec.Cmd
-	dcollectorCmd *exec.Cmd
-	nrfClient     nrf.NRFClient
-	nfID          uuid.UUID
+	// logger is the global logger for the NWDAF application.
+	logger = hclog.New(&hclog.LoggerOptions{Name: "NWDAF", Output: os.Stdout, Level: hclog.Debug})
+	// nrfClient is the client used to interact with the NRF.
+	nrfClient nrf.NRFClient
+	// nfID is the unique identifier for the NF instance.
+	nfID uuid.UUID
+	// microservices holds the running microservices.
+	microservices = map[string]*exec.Cmd{}
 )
 
+// main is the entry point for the NWDAF application.
 func main() {
-	configuration.LoadConfig()
+	// Create a channel to receive signals syscall.SIGINT, syscall.SIGTERM
 	sigChan := make(chan os.Signal, 1)
 	signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
 
-	RegisterToNRF()
+	logger.Info("Starting NWDAF, PID is ", os.Getpid())
 
-	startMicroservice("cmd/darchiver/build/darchiver", &darchiverCmd)
-	startMicroservice("cmd/dcollector/build/dcollector", &dcollectorCmd)
+	// Load environment variables and configuration
+	configuration.LoadEnv()
+	configur, err := configuration.LoadConfig(nil)
+	if err != nil {
+		logger.Error("Error loading configuration", "error", err)
+		os.Exit(1)
+	}
 
+	RegisterToNRF(configur)
+
+	startMicroservice("cmd/darchiver/build/darchiver", map[string]string{}, false, "darchiver")
+
+	// Start monitoring slices
+	StartMonitorSlices(configur)
+
+	// Wait for a signal to terminate the program
 	sig := <-sigChan
 	terminate(sig)
+}
 
-	waitForMicroservice(darchiverCmd, "darchiver")
-	waitForMicroservice(dcollectorCmd, "dcollector")
+// StartMonitorSlices starts monitoring for the configured slices.
+func StartMonitorSlices(configur *configuration.Config) {
+	for _, slice := range configur.Slices {
+		logger.Info(fmt.Sprintf("Starting Monitoring for slice %s", slice.ID))
+		// Creates a map of COMMON environment variables for each data collector microservice
+		commonEnvMap := configuration.CommonEnv(configur.Redis.URI, configur.CoreType, configur.PrometheusPort, &configur.Redis.Password, &configur.LogLevel)
+
+		var envMap map[string]string
+		switch configur.CoreType {
+		case plugin_shared.CoreTypeHPE:
+			envMap = plugin_shared.HPECoreEnv(slice.CoreEndpointIp, slice.Username, slice.Password, slice.ID)
+		case plugin_shared.CoreTypeFree5GC:
+			envMap = plugin_shared.Free5GCCoreEnv(slice.CoreEndpointIp, slice.ID)
+		default:
+			logger.Error("Invalid core type", "core_type", configur.CoreType)
+			os.Exit(1)
+		}
+		// Add common environment variables to the environment map
+		for key, value := range commonEnvMap {
+			envMap[key] = value
+		}
+		startMicroservice("cmd/dcollector/build/dcollector", envMap, false, "dcollectorslice1")
+	}
 }
 
 // startMicroservice starts a microservice as a separate process.
-// It takes the path to the executable and a pointer to an exec.Cmd pointer.
-// The function logs an error and exits the program if the process fails to start.
-func startMicroservice(path string, cmd **exec.Cmd) {
-	*cmd = exec.Command(path)
-	(*cmd).Stdout = os.Stdout
-	(*cmd).Stderr = os.Stderr
-	if err := (*cmd).Start(); err != nil {
-		log.Fatalf("Failed to start %s: %v", path, err)
+// It takes the path to the executable, a map of environment variables, a boolean to inherit existing environment variables, and the name of the microservice.
+func startMicroservice(path string, envVars map[string]string, inherit_env bool, name string) *exec.Cmd {
+	cmd := exec.Command(path)
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+
+	// Set environment variables
+	if inherit_env {
+		cmd.Env = os.Environ()
+	} // inherit existing environment variables
+	for key, value := range envVars {
+		cmd.Env = append(cmd.Env, fmt.Sprintf("%s=%s", key, value))
 	}
+
+	if err := (*cmd).Start(); err != nil {
+		logger.Error(fmt.Sprintf("Failed to start %s: %v", path, err))
+		terminate(syscall.SIGTERM)
+	}
+
+	microservices[name] = cmd
 	logger.Info(fmt.Sprintf("%s started", path))
+
+	return cmd
 }
 
 // waitForMicroservice waits for the specified microservice process to exit.
@@ -57,28 +116,44 @@ func startMicroservice(path string, cmd **exec.Cmd) {
 // If the process exits with an error, it logs the error. Otherwise, it logs that the process has exited.
 func waitForMicroservice(cmd *exec.Cmd, name string) {
 	if err := cmd.Wait(); err != nil {
-		logger.Error(fmt.Sprintf("%s exited with error: %v", name, err))
+		if err.Error() != "signal: killed" {
+			logger.Warn(fmt.Sprintf("%s exited with error: %v", name, err))
+		}
 	}
 	logger.Info(fmt.Sprintf("%s exited", name))
 }
 
+// terminate terminates the application and all running microservices.
+// It takes an os.Signal and logs the shutdown process.
 func terminate(sig os.Signal) {
 	logger.Info(fmt.Sprintf("Received signal: %v. Shutting down...", sig))
-	killProcess(darchiverCmd, "darchiver")
-	killProcess(dcollectorCmd, "dcollector")
+	// Started killing all microservices
+	for key, ms := range microservices {
+		killProcess(ms, key)
+	}
+	// Wait for each microservice to be killed
+	for key := range microservices {
+		waitForMicroservice(microservices[key], key)
+		delete(microservices, key)
+	}
 	DeregisterFromNRF()
+	os.Exit(1)
 }
 
+// killProcess kills the specified process.
+// It takes an exec.Cmd pointer representing the process and a string name of the microservice.
 func killProcess(cmd *exec.Cmd, name string) {
 	if err := cmd.Process.Kill(); err != nil {
-		logger.Error(fmt.Sprintf("Failed to kill %s process", name), "error", err)
+		logger.Error(fmt.Sprintf("Failed to kill PID %s", name), "error", err)
 	}
 }
 
-func RegisterToNRF() {
+// RegisterToNRF registers the NF instance to the NRF.
+// It takes a configuration.Config pointer and logs the registration process.
+func RegisterToNRF(configur *configuration.Config) {
 	nfID = uuid.New()
 	logger.Info(fmt.Sprintf("The function generated UUID is: %v", nfID.String()))
-	nrfClient = nrf.NRFClient{NRFUri: configuration.NrfURI, Logger: logger}
+	nrfClient = nrf.NRFClient{NRFIp: configur.NRFIp, Logger: logger}
 	if err := nrfClient.RegisterToNRF(nfID, models.IpAddress{Ipv4Addr: ""}); err != nil {
 		logger.Error("Error registering to NRF", "error", err)
 		os.Exit(1)

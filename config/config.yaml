@@ -1,0 +1,33 @@
+mongo:
+  username: "your_username"
+  password: "your_password"
+  uri: "mongodb://localhost:27017"
+  name: "nwdaf"
+  collection: "undefined"
+server:
+  port: 8080
+  bind_ip: "0.0.0.0"
+tls:
+  cert_file: "certs/server.crt"
+  key_file: "certs/server.key"
+trusted_proxies:
+  - "192.168.0.0/16"
+  - "127.0.0.1/32"
+log_level: 1
+log_tag: "Tag"
+prometheus_port: 2112
+redis:
+  uri: "localhost:6379"
+  password: ""
+nrf_uri: "localhost:29510"
+core_type: "Free5GC"
+# Normally we should take NFs from the NRF, but it could be useful to have them addressed in the slices
+slices:
+  - id: "1"
+    core_endpoint: "localhost:29510"
+    username: "your_username"
+    password: "your_password"
+    amf_ips:
+      - ""
+    smf_ips:
+      - ""

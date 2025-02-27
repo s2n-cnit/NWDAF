@@ -19,6 +19,7 @@ var logger = hclog.New(&hclog.LoggerOptions{
 // RequestType represents the type of HTTP request.
 type RequestType string
 
+// Constants for the different types of HTTP requests.
 const (
 	GET     RequestType = http.MethodGet
 	POST    RequestType = http.MethodPost
@@ -63,7 +64,7 @@ func HttpRequestJsonBodyResp(url string, requestType RequestType, body map[strin
 		req.Header.Set("Authorization", "Bearer "+*bearerTokenPointer)
 	}
 
-	// Create an HTTP client with a transport that skips TLS verification.
+	// Create an HTTP client with transport that skips TLS verification.
 	tr := &http.Transport{
 		TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
 	}

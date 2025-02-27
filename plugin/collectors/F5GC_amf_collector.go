@@ -6,76 +6,84 @@ import (
 	"github.com/hashicorp/go-hclog"
 	"github.com/hashicorp/go-plugin"
 	"github.com/s2n-cnit/nwdaf/pkg/models"
-	"github.com/s2n-cnit/nwdaf/plugin/shared"
+	"github.com/s2n-cnit/nwdaf/plugin/plugin_shared"
 	"net/http"
 	"os"
 	"strings"
 )
 
+// AmfSubURL is the URL for subscribing to AMF events.
+// TODO: Use IP from EnvVariable
 var AmfSubURL = "http://192.168.254.193:31682/namf-evts/v1/subscriptions"
+
+// TODO: Use body from file template
+// AmfJsonSubBody is the JSON body for the AMF subscription request.
 var AmfJsonSubBody = `{
- "subscription": {
-   "eventNotifyUri": "http://192.168.254.11:5555",
-   "nfId": "046b6c7f-0b8a-43b9-b35d-6489e6daee91",
-   "eventList": [
-   {
-       "type": "LOCATION_REPORT",
-			  "immediateFlag": true
-   },
-   {
-       "type": "PRESENCE_IN_AOI_REPORT"
-   },
-   {
-       "type": "TIMEZONE_REPORT"
-   },
-   {
-       "type": "ACCESS_TYPE_REPORT",
-			  "immediateFlag": true
-   },
-   {
-       "type": "REGISTRATION_STATE_REPORT"
-   },
-   {
-       "type": "CONNECTIVITY_STATE_REPORT"
-   },
-   {
-       "type": "REACHABILITY_REPORT"
-   },
-   {
-       "type": "SUBSCRIBED_DATA_REPORT"
-   },
-   {
-       "type": "COMMUNICATION_FAILURE_REPORT"
-   },
-   {
-       "type": "UES_IN_AREA_REPORT"
-   },
-   {
-       "type": "SUBSCRIPTION_ID_CHANGE"
-   },
-   {
-       "type": "SUBSCRIPTION_ID_ADDITION"
-   }
-   ],
-   "subsChangeNotifyUri": "http://192.168.254.11:5555",
-   "anyUE": true,
-   "options": {
-     "trigger": "ONE_TIME"
-   },
-   "notifyCorrelationId": "1010"
- }
+    "subscription": {
+        "eventNotifyUri": "",
+        "nfId": "046b6c7f-0b8a-43b9-b35d-6489e6daee91",
+        "eventList": [
+            {
+                "type": "LOCATION_REPORT",
+                "immediateFlag": true
+            },
+            {
+                "type": "PRESENCE_IN_AOI_REPORT"
+            },
+            {
+                "type": "TIMEZONE_REPORT"
+            },
+            {
+                "type": "ACCESS_TYPE_REPORT",
+                "immediateFlag": true
+            },
+            {
+                "type": "REGISTRATION_STATE_REPORT"
+            },
+            {
+                "type": "CONNECTIVITY_STATE_REPORT"
+            },
+            {
+                "type": "REACHABILITY_REPORT"
+            },
+            {
+                "type": "SUBSCRIBED_DATA_REPORT"
+            },
+            {
+                "type": "COMMUNICATION_FAILURE_REPORT"
+            },
+            {
+                "type": "UES_IN_AREA_REPORT"
+            },
+            {
+                "type": "SUBSCRIPTION_ID_CHANGE"
+            },
+            {
+                "type": "SUBSCRIPTION_ID_ADDITION"
+            }
+        ],
+        "subsChangeNotifyUri": "http://192.168.254.11:5555",
+        "anyUE": true,
+        "options": {
+            "trigger": "ONE_TIME"
+        },
+        "notifyCorrelationId": "1010"
+    }
 }`
 
+// F5GAmfCollector is a collector for Free5GC AMF metrics.
 type F5GAmfCollector struct {
 	logger hclog.Logger
 }
 
+// HandShakeConfigAmfCollector is the handshake configuration for the AMF collector plugin.
 var HandShakeConfigAmfCollector = plugin.HandshakeConfig{
 	ProtocolVersion:  1,
 	MagicCookieKey:   "NWDAF_PLUGIN_COOKIE_KEY",
 	MagicCookieValue: "dsJha6J899JNjudayscn",
 }
 
+// main is the entry point for the F5GAmfCollector application.
 func main() {
 	debug_locally := false
 	args := os.Args[1:]
@@ -101,7 +109,7 @@ func main() {
 	} else {
 		// pluginMap is the map of plugins we can dispense.
 		var pluginMap = map[string]plugin.Plugin{
-			"F5GC_amf_collector": &shared.MetricCollectorPlugin{Impl: collector},
+			"F5GC_amf_collector": &plugin_shared.MetricCollectorPlugin{Impl: collector},
 		}
 		logger.Info("Offered plugins: ", pluginMap)
 
@@ -112,13 +120,14 @@ func main() {
 	}
 }
 
+// Collect collects metrics from the AMF and returns them as a list of NWDAF metrics.
 func (g *F5GAmfCollector) Collect() []models.Metric {
 	// Make a POST request to the AMF to subscribe to events (one time mode = polling)
 	resp, err := http.Post(AmfSubURL, "application/json", strings.NewReader(AmfJsonSubBody))
 	if err != nil {
 		g.logger.Error("Error making POST request:", err)
 	}
-	// When the function terminate the close is called
+	// When the function terminates, the close is called
 	defer resp.Body.Close()
 
 	g.logger.Debug("Response body:", resp.Body)
@@ -141,6 +150,19 @@ func (g *F5GAmfCollector) Collect() []models.Metric {
 	return list
 }
 
+// GetRequiredEnvVars returns the list of environment variables required by the plugin.
+func (collector *F5GAmfCollector) GetRequiredEnvVars() []string {
+	return plugin_shared.Free5GCAmfRequiredEnvVars
+}
+
+// BuildMetrics builds the metrics from the AMF subscription response.
+// The metrics are built as a map of metrics, where the key is the metric name.
+//
+// Parameters:
+// - subscription: The AMF subscription response
+//
+// Returns:
+// - A map of metrics
 func (g *F5GAmfCollector) BuildMetrics(subscription freemodels.AmfCreatedEventSubscription) map[string]models.Metric {
 	metricMap := make(map[string]models.Metric)
 	reportList := subscription.ReportList
@@ -157,6 +179,12 @@ func (g *F5GAmfCollector) BuildMetrics(subscription freemodels.AmfCreatedEventSu
 	return metricMap
 }
 
+// UpdateAccessReport updates the metrics map with access type report data.
+//
+// Parameters:
+// - metricMap: The map of metrics to update
+// - report: The AMF event report
+// - nfID: The NF instance ID
 func (g *F5GAmfCollector) UpdateAccessReport(metricMap *map[string]models.Metric, report freemodels.AmfEventReport, nfID string) {
 	accessTypesList := report.AccessTypeList
 	for _, accessType := range accessTypesList {
@@ -184,8 +212,13 @@ func (g *F5GAmfCollector) UpdateAccessReport(metricMap *map[string]models.Metric
 	}
 }
 
+// UpdateLocationReport updates the metrics map with location report data.
+//
+// Parameters:
+// - metricMap: The map of metrics to update
+// - report: The AMF event report
+// - nfID: The NF instance ID
 func (g *F5GAmfCollector) UpdateLocationReport(metricMap *map[string]models.Metric, report freemodels.AmfEventReport, nfID string) {
-
 	tac := report.Location.NrLocation.Tai.Tac
 	mapValue := *metricMap
 	value, exists := mapValue[tac]

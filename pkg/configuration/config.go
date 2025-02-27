@@ -1,74 +1,82 @@
 package configuration
 
+// Description: This file contains the configuration structure and the function to load the configuration from a file.
+
 import (
 	"github.com/hashicorp/go-hclog"
-	"github.com/joho/godotenv"
-	"github.com/sirupsen/logrus"
+	"github.com/s2n-cnit/nwdaf/pkg/utils"
+	"github.com/s2n-cnit/nwdaf/plugin/plugin_shared"
+	"gopkg.in/yaml.v3"
 	"os"
-	"strconv"
-	"strings"
 )
 
-var (
-	MongoUsername  string
-	MongoPassword  string
-	MongoURI       string
-	DatabaseName   string
-	Collection     string
-	Port           string
-	BindIP         string
-	CertFile       string
-	KeyFile        string
-	TrustedProxies []string
-	LogLevel       hclog.Level
-	PrometheusPort uint16
-	RedisURI       string
-	RedisPassword  string
-	NrfURI         string
+const (
+	// ConfigFile is the default configuration file
+	ConfigFile = "config/config.yaml"
+	// ConfigFileDev is the development configuration file
+	ConfigFileDev = "config/config_dev.yaml"
 )
 
-// LoadConfig loads environment variables and stores them in package-level variables
-func LoadConfig() {
-	// Load .env file if using godotenv
-	err := godotenv.Load()
-	if err != nil {
-		logrus.Println(".env file not found, environment variables should be set directly.")
-	}
-
-	// Load environment variables into package-level variables
-	MongoUsername = GetEnv("MONGO_USERNAME", "")
-	MongoPassword = GetEnv("MONGO_PASSWORD", "")
-	MongoURI = GetEnv("MONGO_URI", "mongodb://localhost:27017")
-	DatabaseName = GetEnv("DATABASE_NAME", "nwdaf")
-	Collection = GetEnv("COLLECTION_NAME", "undefined")
-	Port = GetEnv("PORT", "8080")
-	BindIP = GetEnv("BIND_IP", "0.0.0.0")
-	CertFile = GetEnv("TLS_CERT_FILE", "certs/server.crt")
-	KeyFile = GetEnv("TLS_KEY_FILE", "certs/server.key")
-	TrustedProxies = strings.Split(strings.ReplaceAll(GetEnv("TRUSTED_PROXIES", "192.168.0.0/16, 127.0.0.1/32"), " ", ""), ",")
-	// LOG_LEVEL is a string, so we need to convert it to uint32
-	value, err := strconv.ParseUint(GetEnv("LOG_LEVEL", "1"), 10, 32) // Trace Level
-	if err != nil {
-		logrus.Fatalf("Error parsing string to uint32: %v", err)
-	}
-	LogLevel = hclog.Level(uint32(value))
-	// PROMETHEUS_PORT is a string, so we need to convert it to uint16
-	value, err = strconv.ParseUint(GetEnv("PROMETHEUS_PORT", "2112"), 10, 16)
-	if err != nil {
-		logrus.Fatalf("Error parsing string to uint16: %v", err)
-	}
-	PrometheusPort = uint16(value)
-	// REDIS USRI
-	RedisURI = GetEnv("REDIS_URI", "localhost:6379")
-	NrfURI = GetEnv("NRF_URI", "localhost:29510")
-	RedisPassword = GetEnv("REDIS_PASSWORD", "")
+// Config is the configuration structure for the NWDAF.
+type Config struct {
+	Mongo struct {
+		Username   string `yaml:"username"`
+		Password   string `yaml:"password"`
+		URI        string `yaml:"uri"`
+		Name       string `yaml:"name"`
+		Collection string `yaml:"collection"`
+	} `yaml:"mongo"`
+	Server struct {
+		Port   int    `yaml:"port"`
+		BindIP string `yaml:"bind_ip"`
+	} `yaml:"server"`
+	TLS struct {
+		CertFile string `yaml:"cert_file"`
+		KeyFile  string `yaml:"key_file"`
+	} `yaml:"tls"`
+	TrustedProxies []string    `yaml:"trusted_proxies"`
+	LogLevel       hclog.Level `yaml:"log_level"`
+	LogTag         string      `yaml:"log_tag"`
+	PrometheusPort int         `yaml:"prometheus_port"`
+	Redis          struct {
+		URI      string `yaml:"uri"`
+		Password string `yaml:"password"`
+	} `yaml:"redis"`
+	NRFIp    string                 `yaml:"nrf_uri"`
+	CoreType plugin_shared.CoreType `yaml:"core_type"`
+	Slices   []struct {
+		ID             string   `yaml:"id"`
+		Username       string   `yaml:"username"`
+		Password       string   `yaml:"password"`
+		CoreEndpointIp string   `yaml:"core_endpoint_ip"`
+		AmfIPs         []string `yaml:"amf_ips"`
+		SmfIPs         []string `yaml:"smf_ips"`
+	} `yaml:"slices"`
 }
 
-// GetEnv reads an environment variable or returns a default value if not set
-func GetEnv(key, defaultValue string) string {
-	value, exists := os.LookupEnv(key)
-	if !exists {
-		return defaultValue
+// LoadConfig loads the configuration from a file
+// If the filenamePointer is nil, it will try to load from the default path but if the development
+// configuration file exists, it will use it.
+// If the filenamePointer is not nil, it will load the configuration from the specified file.
+func LoadConfig(filenamePointer *string) (*Config, error) {
+	var filename string
+	if filenamePointer == nil {
+		if utils.FileExists(ConfigFileDev) {
+			filename = ConfigFileDev
+		} else {
+			filename = ConfigFile
+		}
+	} else {
+		filename = *filenamePointer
 	}
-	return value
+	data, err := os.ReadFile(filename)
+	if err != nil {
+		return nil, err
+	}
+	var config Config
+	err = yaml.Unmarshal(data, &config)
+	if err != nil {
+		return nil, err
+	}
+	return &config, nil
 }
