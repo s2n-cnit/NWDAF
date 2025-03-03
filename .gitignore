@@ -1,0 +1,12 @@
+/config/config_dev.yaml
+/plugin/collectors/build/
+/certs/server.crt
+/certs/server.key
+/go.sum
+/cmd/darchiver/build/
+/cmd/dcollector/build/
+/cmd/nwdaf/build/
+.idea
+/diagrams/*.bkp
+/diagrams/*.svg
+/docs/*hpe*
