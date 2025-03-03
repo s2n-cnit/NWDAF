@@ -1,0 +1,52 @@
+{
+  "subscription": {
+    "eventNotifyUri": "",
+    "nfId": "046b6c7f-0b8a-43b9-b35d-6489e6daee91",
+    "eventList": [
+      {
+        "type": "LOCATION_REPORT",
+        "immediateFlag": true
+      },
+      {
+        "type": "PRESENCE_IN_AOI_REPORT"
+      },
+      {
+        "type": "TIMEZONE_REPORT"
+      },
+      {
+        "type": "ACCESS_TYPE_REPORT",
+        "immediateFlag": true
+      },
+      {
+        "type": "REGISTRATION_STATE_REPORT"
+      },
+      {
+        "type": "CONNECTIVITY_STATE_REPORT"
+      },
+      {
+        "type": "REACHABILITY_REPORT"
+      },
+      {
+        "type": "SUBSCRIBED_DATA_REPORT"
+      },
+      {
+        "type": "COMMUNICATION_FAILURE_REPORT"
+      },
+      {
+        "type": "UES_IN_AREA_REPORT"
+      },
+      {
+        "type": "SUBSCRIPTION_ID_CHANGE"
+      },
+      {
+        "type": "SUBSCRIPTION_ID_ADDITION"
+      }
+    ],
+    "subsChangeNotifyUri": "",
+    "anyUE": true,
+    "options": {
+      "trigger": "ONE_TIME"
+    },
+    "notifyCorrelationId": "1010"
+  }
+}

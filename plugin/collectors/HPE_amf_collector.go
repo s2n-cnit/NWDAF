@@ -13,9 +13,9 @@ import (
 
 type HPEAmfCollector struct {
 	logger       hclog.Logger
-	coreIp       string
-	username     string
-	password     string
+	coreIp       *string
+	username     *string
+	password     *string
 	token        string
 	metricPrefix string
 }
@@ -27,11 +27,11 @@ var HandShakeConfigHPEAmfCollector = plugin.HandshakeConfig{
 }
 
 func (collector *HPEAmfCollector) get_evn() {
-	collector.coreIp = configuration.GetEnv(plugin_shared.EnvHpeCoreIp, "")
-	collector.username = configuration.GetEnv(plugin_shared.EnvHpeUsername, "")
-	collector.password = configuration.GetEnv(plugin_shared.EnvHpePassword, "")
-	collector.metricPrefix = configuration.GetEnv(plugin_shared.EnvHpeMetricPrefix, "HPE_CORE_")
-	if collector.coreIp == "" || collector.username == "" || collector.password == "" {
+	collector.coreIp = configuration.GetEnvStrNoDefault(plugin_shared.EnvHpeCoreIp)
+	collector.username = configuration.GetEnvStrNoDefault(plugin_shared.EnvHpeUsername)
+	collector.password = configuration.GetEnvStrNoDefault(plugin_shared.EnvHpePassword)
+	collector.metricPrefix = configuration.GetEnv(configuration.EnvMetricPrefix, "NWDAF_HPE_")
+	if collector.coreIp == nil || collector.username == nil || collector.password == nil {
 		collector.logger.Error("Missing HPE environment variables")
 		os.Exit(1)
 	}
@@ -44,12 +44,12 @@ func (collector *HPEAmfCollector) BuildMetric(name string, description string, v
 // Login authenticates the collector with the HPE core system and retrieves an access token.
 func (collector *HPEAmfCollector) Login() {
 	// Construct the login URL using the core IP address.
-	url := fmt.Sprintf("https://%v/core/pls/api/1/auth/login", collector.coreIp)
+	url := fmt.Sprintf("https://%v/core/pls/api/1/auth/login", *collector.coreIp)
 
 	// Create the request body with the username and password.
 	body := map[string]string{
-		"username": collector.username,
-		"password": collector.password,
+		"username": *collector.username,
+		"password": *collector.password,
 	}
 
 	// Send the HTTP request and get the response.
@@ -85,7 +85,7 @@ func (collector *HPEAmfCollector) GetRequiredEnvVars() []string {
 }
 
 func (collector *HPEAmfCollector) CollectSupiInfo() []models.Metric {
-	url := fmt.Sprintf("https://%v/core/amf/api/1/ue/status/supis", collector.coreIp)
+	url := fmt.Sprintf("https://%v/core/amf/api/1/ue/status/supis", *collector.coreIp)
 
 	resp, err := http_internal.HttpRequestJsonBodyResp(url, http_internal.GET, nil, &collector.token)
 
@@ -101,7 +101,7 @@ func (collector *HPEAmfCollector) CollectSupiInfo() []models.Metric {
 		// TODO location info can be retrieved from the SUPIs
 		collector.logger.Debug("Getting SUPIs from HPE AMF")
 		for _, supi := range castedValue {
-			url := fmt.Sprintf("https://%v/core/amf/api/1/ue/status/supis/%v", collector.coreIp, supi)
+			url := fmt.Sprintf("https://%v/core/amf/api/1/ue/status/supis/%v", *collector.coreIp, supi)
 			resp, err := http_internal.HttpRequestJsonBodyResp(url, http_internal.GET, nil, &collector.token)
 			if err != nil {
 				collector.logger.Error("Error getting SUPI info:", err)

@@ -64,15 +64,16 @@ func main() {
 func StartMonitorSlices(configur *configuration.Config) {
 	for _, slice := range configur.Slices {
 		logger.Info(fmt.Sprintf("Starting Monitoring for slice %s", slice.ID))
+		coreTypeStr := configur.CoreType.String() + "_"
 		// Creates a map of COMMON environment variables for each data collector microservice
-		commonEnvMap := configuration.CommonEnv(configur.Redis.URI, configur.CoreType, configur.PrometheusPort, &configur.Redis.Password, &configur.LogLevel)
+		commonEnvMap := configuration.CommonEnv(configur.Redis.URI, configur.CoreType, configur.PrometheusPort, &configur.Redis.Password, &configur.LogLevel, &coreTypeStr)
 
 		var envMap map[string]string
 		switch configur.CoreType {
 		case plugin_shared.CoreTypeHPE:
 			envMap = plugin_shared.HPECoreEnv(slice.CoreEndpointIp, slice.Username, slice.Password, slice.ID)
 		case plugin_shared.CoreTypeFree5GC:
-			envMap = plugin_shared.Free5GCCoreEnv(slice.CoreEndpointIp, slice.ID)
+			envMap = plugin_shared.Free5GCCoreEnv(slice.AmfIPs[0], slice.ID)
 		default:
 			logger.Error("Invalid core type", "core_type", configur.CoreType)
 			os.Exit(1)

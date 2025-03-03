@@ -13,6 +13,7 @@ const EnvCoreType = "CORE_TYPE"
 const EnvRedisPassword = "REDIS_PASSWORD"
 const EnvPrometheusLocalPort = "PROMETHEUS_LOCAL_PORT"
 const EnvLogLevel = "LOG_LEVEL"
+const EnvMetricPrefix = "METRIC_PREFIX"
 
 var logger = hclog.New(&hclog.LoggerOptions{Name: "Environ", Output: os.Stdout, Level: hclog.Debug})
 
@@ -20,7 +21,7 @@ var logger = hclog.New(&hclog.LoggerOptions{Name: "Environ", Output: os.Stdout, 
 // The scope of this function is to provide a common set of environment variables that have a **standardized** name.
 // The main function (NWDAF) will use this function to set the environment variables for the microservices that
 // know how to read them because they will use the same **standardized** names.
-func CommonEnv(redisUri string, coreType plugin_shared.CoreType, prometheusLocalPort int, redisPassword *string, logLevel *hclog.Level) map[string]string {
+func CommonEnv(redisUri string, coreType plugin_shared.CoreType, prometheusLocalPort int, redisPassword *string, logLevel *hclog.Level, metricPrefix *string) map[string]string {
 	toReturn := map[string]string{
 		EnvRedisUri:            redisUri,
 		EnvCoreType:            string(coreType),
@@ -31,6 +32,9 @@ func CommonEnv(redisUri string, coreType plugin_shared.CoreType, prometheusLocal
 	}
 	if logLevel != nil {
 		toReturn[EnvLogLevel] = strconv.Itoa(int(*logLevel))
+	}
+	if metricPrefix != nil {
+		toReturn[EnvMetricPrefix] = *metricPrefix
 	}
 	return toReturn
 }
@@ -57,7 +61,7 @@ func GetEnv(key, defaultValue string) string {
 func GetEnvNoDefault(key string) (string, bool) {
 	value, exists := os.LookupEnv(key)
 	if !exists {
-		logger.Warn("Trying to load an environment variable that has not been set", key)
+		//logger.Warn("Trying to load an environment variable that has not been set", key)
 	}
 	return value, exists
 }

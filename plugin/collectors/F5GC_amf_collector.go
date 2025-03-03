@@ -5,6 +5,7 @@ import (
 	freemodels "github.com/free5gc/openapi/models"
 	"github.com/hashicorp/go-hclog"
 	"github.com/hashicorp/go-plugin"
+	"github.com/s2n-cnit/nwdaf/pkg/configuration"
 	"github.com/s2n-cnit/nwdaf/pkg/models"
 	"github.com/s2n-cnit/nwdaf/plugin/plugin_shared"
 	"net/http"
@@ -12,79 +13,45 @@ import (
 	"strings"
 )
 
-// AmfSubURL is the URL for subscribing to AMF events.
-// TODO: Use IP from EnvVariable
-var AmfSubURL = "http://192.168.254.193:31682/namf-evts/v1/subscriptions"
-
-// TODO: Use body from file template
-// AmfJsonSubBody is the JSON body for the AMF subscription request.
-var AmfJsonSubBody = `{
-    "subscription": {
-        "eventNotifyUri": "",
-        "nfId": "046b6c7f-0b8a-43b9-b35d-6489e6daee91",
-        "eventList": [
-            {
-                "type": "LOCATION_REPORT",
-                "immediateFlag": true
-            },
-            {
-                "type": "PRESENCE_IN_AOI_REPORT"
-            },
-            {
-                "type": "TIMEZONE_REPORT"
-            },
-            {
-                "type": "ACCESS_TYPE_REPORT",
-                "immediateFlag": true
-            },
-            {
-                "type": "REGISTRATION_STATE_REPORT"
-            },
-            {
-                "type": "CONNECTIVITY_STATE_REPORT"
-            },
-            {
-                "type": "REACHABILITY_REPORT"
-            },
-            {
-                "type": "SUBSCRIBED_DATA_REPORT"
-            },
-            {
-                "type": "COMMUNICATION_FAILURE_REPORT"
-            },
-            {
-                "type": "UES_IN_AREA_REPORT"
-            },
-            {
-                "type": "SUBSCRIPTION_ID_CHANGE"
-            },
-            {
-                "type": "SUBSCRIPTION_ID_ADDITION"
-            }
-        ],
-        "subsChangeNotifyUri": "http://192.168.254.11:5555",
-        "anyUE": true,
-        "options": {
-            "trigger": "ONE_TIME"
-        },
-        "notifyCorrelationId": "1010"
-    }
-}`
-
 // F5GAmfCollector is a collector for Free5GC AMF metrics.
 type F5GAmfCollector struct {
-	logger hclog.Logger
+	logger       hclog.Logger
+	metricPrefix string
+	amfIP        string
+	amfSubURL    string
 }
 
-// HandShakeConfigAmfCollector is the handshake configuration for the AMF collector plugin.
-var HandShakeConfigAmfCollector = plugin.HandshakeConfig{
-	ProtocolVersion:  1,
-	MagicCookieKey:   "NWDAF_PLUGIN_COOKIE_KEY",
-	MagicCookieValue: "dsJha6J899JNjudayscn",
-}
+var (
+	// HandShakeConfigAmfCollector is the handshake configuration for the AMF collector plugin.
+	HandShakeConfigAmfCollector = plugin.HandshakeConfig{
+		ProtocolVersion:  1,
+		MagicCookieKey:   "NWDAF_PLUGIN_COOKIE_KEY",
+		MagicCookieValue: "dsJha6J899JNjudayscn",
+	}
+
+	logger = hclog.New(&hclog.LoggerOptions{
+		Level:      hclog.Debug,
+		Output:     os.Stderr,
+		JSONFormat: true,
+	})
+
+	metricPrefix = "NWDAF_"
+
+	amfJsonSubBody string
+)
 
 // main is the entry point for the F5GAmfCollector application.
 func main() {
+	configuration.LoadEnv()
+	amfIPEnv := configuration.GetEnvStrNoDefault(plugin_shared.EnvFree5GCAmfIp)
+	if amfIPEnv == nil {
+		logger.Error("Environment variable not set", "variable", plugin_shared.EnvFree5GCAmfIp)
+		os.Exit(1)
+	}
+
+	logger.SetLevel(hclog.Level(configuration.GetEnvInt(configuration.EnvLogLevel, int(hclog.Debug))))
+	metricPrefix = configuration.GetEnv(configuration.EnvMetricPrefix, "NWDAF_")
+
 	debug_locally := false
 	args := os.Args[1:]
 	for _, argument := range args {
@@ -93,15 +60,18 @@ func main() {
 		}
 	}
 
-	logger := hclog.New(&hclog.LoggerOptions{
-		Level:      hclog.Trace,
-		Output:     os.Stderr,
-		JSONFormat: true,
-	})
-
 	collector := &F5GAmfCollector{
-		logger: logger,
+		logger:       logger,
+		metricPrefix: metricPrefix,
+		amfIP:        *amfIPEnv,
+		amfSubURL:    "http://" + *amfIPEnv + ":31682/namf-evts/v1/subscriptions",
 	}
+
+	fileContent, err := os.ReadFile("plugin/collectors/templates/F5GC_amf_request.json")
+	if err != nil {
+		logger.Error("Error reading file", "error", err)
+	}
+	amfJsonSubBody = string(fileContent)
 
 	// If run as a standalone program, collect metrics locally, if loaded as a plugin, serve the plugin
 	if debug_locally {
@@ -121,25 +91,26 @@ func main() {
 }
 
 // Collect collects metrics from the AMF and returns them as a list of NWDAF metrics.
-func (g *F5GAmfCollector) Collect() []models.Metric {
+func (collector *F5GAmfCollector) Collect() []models.Metric {
+
 	// Make a POST request to the AMF to subscribe to events (one time mode = polling)
-	resp, err := http.Post(AmfSubURL, "application/json", strings.NewReader(AmfJsonSubBody))
+	resp, err := http.Post(collector.amfSubURL, "application/json", strings.NewReader(amfJsonSubBody))
 	if err != nil {
-		g.logger.Error("Error making POST request:", err)
+		collector.logger.Error("Error making POST request:", err)
 	}
 	// When the function terminates, the close is called
 	defer resp.Body.Close()
 
-	g.logger.Debug("Response body:", resp.Body)
+	collector.logger.Debug("Response body:", resp.Body)
 
 	var result freemodels.AmfCreatedEventSubscription
 	err_dec := json.NewDecoder(resp.Body).Decode(&result)
 	if err_dec != nil {
-		g.logger.Error("Error decoding JSON response:", err)
+		collector.logger.Error("Error decoding JSON response:", err)
 	}
 
 	// After response is decoded, build the metrics as a standard NWDAF model
-	metrics_map := g.BuildMetrics(result)
+	metrics_map := collector.BuildMetrics(result)
 
 	// Preallocate the list with the length of the map for better performance
 	list := make([]models.Metric, 0, len(metrics_map))
@@ -163,16 +134,16 @@ func (collector *F5GAmfCollector) GetRequiredEnvVars() []string {
 //
 // Returns:
 // - A map of metrics
-func (g *F5GAmfCollector) BuildMetrics(subscription freemodels.AmfCreatedEventSubscription) map[string]models.Metric {
+func (collector *F5GAmfCollector) BuildMetrics(subscription freemodels.AmfCreatedEventSubscription) map[string]models.Metric {
 	metricMap := make(map[string]models.Metric)
 	reportList := subscription.ReportList
-	g.logger.Debug("Subscription report list", "reportList", reportList)
+	collector.logger.Debug("Subscription report list", "reportList", reportList)
 	for _, report := range reportList {
 		switch report.Type {
 		case freemodels.AmfEventType_LOCATION_REPORT:
-			g.UpdateLocationReport(&metricMap, report, subscription.Subscription.NfId)
+			collector.UpdateLocationReport(&metricMap, report, subscription.Subscription.NfId)
 		case freemodels.AmfEventType_ACCESS_TYPE_REPORT:
-			g.UpdateAccessReport(&metricMap, report, subscription.Subscription.NfId)
+			collector.UpdateAccessReport(&metricMap, report, subscription.Subscription.NfId)
 		}
 	}
 
@@ -185,7 +156,7 @@ func (g *F5GAmfCollector) BuildMetrics(subscription freemodels.AmfCreatedEventSu
 // - metricMap: The map of metrics to update
 // - report: The AMF event report
 // - nfID: The NF instance ID
-func (g *F5GAmfCollector) UpdateAccessReport(metricMap *map[string]models.Metric, report freemodels.AmfEventReport, nfID string) {
+func (collector *F5GAmfCollector) UpdateAccessReport(metricMap *map[string]models.Metric, report freemodels.AmfEventReport, nfID string) {
 	accessTypesList := report.AccessTypeList
 	for _, accessType := range accessTypesList {
 		var key string
@@ -201,7 +172,7 @@ func (g *F5GAmfCollector) UpdateAccessReport(metricMap *map[string]models.Metric
 			value.Value = value.Value + 1
 		} else {
 			value = models.Metric{
-				Name:        key,
+				Name:        collector.metricPrefix + key,
 				Description: "Number of devices in 3GPP Access",
 				NFid:        nfID,
 				NFType:      "amf",
@@ -218,17 +189,17 @@ func (g *F5GAmfCollector) UpdateAccessReport(metricMap *map[string]models.Metric
 // - metricMap: The map of metrics to update
 // - report: The AMF event report
 // - nfID: The NF instance ID
-func (g *F5GAmfCollector) UpdateLocationReport(metricMap *map[string]models.Metric, report freemodels.AmfEventReport, nfID string) {
+func (collector *F5GAmfCollector) UpdateLocationReport(metricMap *map[string]models.Metric, report freemodels.AmfEventReport, nfID string) {
 	tac := report.Location.NrLocation.Tai.Tac
 	mapValue := *metricMap
 	value, exists := mapValue[tac]
 	if exists {
-		g.logger.Trace("Incrementing number of devices in the same TAC")
+		collector.logger.Trace("Incrementing number of devices in the same TAC")
 		value.Value = value.Value + 1 // Increment the number of devices in the same TAC
 	} else {
-		g.logger.Trace("Creating new metric for TAC")
+		collector.logger.Trace("Creating new metric for TAC")
 		value = models.Metric{
-			Name:        "LR_TAC_" + tac,
+			Name:        collector.metricPrefix + "LR_TAC_" + tac,
 			Description: "Number of devices in the same TAC",
 			NFid:        nfID,
 			NFType:      "amf",

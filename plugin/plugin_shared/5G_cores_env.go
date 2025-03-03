@@ -29,10 +29,9 @@ const EnvMagicCookieValue = "MAGIC_COOKIE_VALUE"
 
 // Environment variable names for HPE core network.
 const (
-	EnvHpeCoreIp       = "HPE_CORE_IP"
-	EnvHpeUsername     = "HPE_USERNAME"
-	EnvHpePassword     = "HPE_PASSWORD"
-	EnvHpeMetricPrefix = "HPE_METRIC_PREFIX"
+	EnvHpeCoreIp   = "HPE_CORE_IP"
+	EnvHpeUsername = "HPE_USERNAME"
+	EnvHpePassword = "HPE_PASSWORD"
 )
 
 // HPERequiredEnvVars lists the required environment variables for HPE plugins.
@@ -53,10 +52,9 @@ var HPERequiredEnvVars = []string{
 // Returns a map of environment variable names to their values.
 func HPECoreEnv(coreIp string, coreUsername string, corePassword string, coreMetricPrefix string) map[string]string {
 	return map[string]string{
-		EnvHpeCoreIp:       coreIp,
-		EnvHpeUsername:     coreUsername,
-		EnvHpePassword:     corePassword,
-		EnvHpeMetricPrefix: coreMetricPrefix,
+		EnvHpeCoreIp:   coreIp,
+		EnvHpeUsername: coreUsername,
+		EnvHpePassword: corePassword,
 	}
 }
 
@@ -64,7 +62,7 @@ func HPECoreEnv(coreIp string, coreUsername string, corePassword string, coreMet
 
 // Environment variable names for Free5GC core network.
 const (
-	EnvFree5GCAmfIp        = "FREE5GC_CORE_IP"
+	EnvFree5GCAmfIp        = "FREE5GC_AMF_IP"
 	EnvFree5GCMetricPrefix = "FREE5GC_METRIC_PREFIX"
 )
 

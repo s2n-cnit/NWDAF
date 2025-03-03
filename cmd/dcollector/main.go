@@ -43,12 +43,13 @@ var (
 	pluginList              []interface{}
 	scrapingIntervalSeconds = 60
 	scrapingInterval        = time.Duration(scrapingIntervalSeconds) * time.Second
+	metricsPrefix           string
 )
 
 func Start() {
 	configuration.LoadEnv()
-	logLevelValue := hclog.Level(configuration.GetEnvInt(configuration.EnvLogLevel, int(hclog.Debug)))
-	logger.SetLevel(logLevelValue)
+	metricsPrefix = configuration.GetEnv(configuration.EnvMetricPrefix, "NWDAF_")
+	logger.SetLevel(hclog.Level(configuration.GetEnvInt(configuration.EnvLogLevel, int(hclog.Debug))))
 
 	// Get the core type from the environment variable.
 	coreType := configuration.GetEnvStrNoDefault(configuration.EnvCoreType)
@@ -87,13 +88,35 @@ func Start() {
 		var collectedData []models.Metric
 		for _, loadedPlugin := range pluginList {
 			collector := loadedPlugin.(shared2.MetricCollector)
-			collectedData = append(collectedData, collector.Collect()...)
+			// Collect data from the plugin and append it to the collected data. If panic data is nil
+			collectedDataSinglePlugin := CollectNoPanic(collector)
+			collectedData = append(collectedData, collectedDataSinglePlugin...)
 		}
 		PublishOnRedis(collectedData)
 
 		logger.Info(fmt.Sprintf("Data collected and sent to redis. Waiting %d seconds before collecting data again...", scrapingIntervalSeconds))
 		time.Sleep(scrapingInterval)
 	}
+}
+
+// CollectNoPanic collects data from the specified metric collector and returns the collected metrics.
+// If a panic occurs during the collection, the function recovers and returns nil.
+//
+// Parameters:
+// - metricCollector: The metric collector to collect data from.
+//
+// Returns:
+// - A slice of Metric objects representing the collected data.
+func CollectNoPanic(metricCollector shared2.MetricCollector) []models.Metric {
+	var collectedMetrics []models.Metric
+	defer func() {
+		if r := recover(); r != nil {
+			logger.Error("Recovered from panic")
+		}
+	}()
+
+	collectedMetrics = metricCollector.Collect()
+	return collectedMetrics
 }
 
 // LoadPlugin loads a plugin from the specified file and returns the plugin client.
