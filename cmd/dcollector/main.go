@@ -10,6 +10,7 @@ import (
 	"github.com/s2n-cnit/nwdaf/pkg/configuration"
 	"github.com/s2n-cnit/nwdaf/pkg/models"
 	"github.com/s2n-cnit/nwdaf/pkg/redis_custom"
+	"github.com/s2n-cnit/nwdaf/pkg/utils"
 	shared2 "github.com/s2n-cnit/nwdaf/plugin/plugin_shared"
 	"log"
 	"os"
@@ -23,9 +24,7 @@ const PluginFolder = "plugin/collectors/build/"
 var (
 	// handshakeConfig is the configuration for the plugin handshake.
 	handshakeConfig = plugin.HandshakeConfig{
-		ProtocolVersion:  1,
-		MagicCookieKey:   "NWDAF_PLUGIN_COOKIE_KEY",
-		MagicCookieValue: "dsJha6J899JNjudayscn",
+		ProtocolVersion: 1,
 	}
 	// logger is the global logger for the Data Collector module.
 	logger = hclog.New(&hclog.LoggerOptions{
@@ -43,21 +42,31 @@ var (
 	pluginList              []interface{}
 	scrapingIntervalSeconds = 60
 	scrapingInterval        = time.Duration(scrapingIntervalSeconds) * time.Second
+	coreType                *string
 	metricsPrefix           string
 )
 
-func Start() {
+func SetEnvironment() {
 	configuration.LoadEnv()
 	metricsPrefix = configuration.GetEnv(configuration.EnvMetricPrefix, "NWDAF_")
 	logger.SetLevel(hclog.Level(configuration.GetEnvInt(configuration.EnvLogLevel, int(hclog.Debug))))
 
 	// Get the core type from the environment variable.
-	coreType := configuration.GetEnvStrNoDefault(configuration.EnvCoreType)
+	coreType = configuration.GetEnvStrNoDefault(configuration.EnvCoreType)
 	if coreType == nil {
 		logger.Error("Environment variable not set", "variable", configuration.EnvCoreType)
 		os.Exit(1)
 	}
 
+	//Generate handshake config
+	handshakeConfig.MagicCookieKey = fmt.Sprintf("%s_PLUGIN_COOKIE_KEY", *coreType)
+	handshakeConfig.MagicCookieValue = utils.RandomString(15)
+	configuration.SetEnv(shared2.EnvMagicCookieKeyName, handshakeConfig.MagicCookieKey)
+	configuration.SetEnv(shared2.EnvMagicCookieKeyValue, handshakeConfig.MagicCookieValue)
+}
+
+func Start() {
+	SetEnvironment()
 	initializeRedis()
 
 	files, err := os.ReadDir(PluginFolder)

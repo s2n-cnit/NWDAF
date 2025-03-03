@@ -24,33 +24,50 @@ type F5GAmfCollector struct {
 var (
 	// HandShakeConfigAmfCollector is the handshake configuration for the AMF collector plugin.
 	HandShakeConfigAmfCollector = plugin.HandshakeConfig{
-		ProtocolVersion:  1,
-		MagicCookieKey:   "NWDAF_PLUGIN_COOKIE_KEY",
-		MagicCookieValue: "dsJha6J899JNjudayscn",
+		ProtocolVersion: 1,
 	}
-
-	logger = hclog.New(&hclog.LoggerOptions{
-		Level:      hclog.Debug,
-		Output:     os.Stderr,
-		JSONFormat: true,
-	})
 
 	metricPrefix = "NWDAF_"
 
 	amfJsonSubBody string
+
+	F5GCAmfCollector = &F5GAmfCollector{
+		logger: hclog.New(&hclog.LoggerOptions{
+			Level:      hclog.Debug,
+			Output:     os.Stderr,
+			JSONFormat: true,
+		}),
+	}
 )
 
-// main is the entry point for the F5GAmfCollector application.
-func main() {
+func (collector *F5GAmfCollector) SetEnvironment() {
 	configuration.LoadEnv()
 	amfIPEnv := configuration.GetEnvStrNoDefault(plugin_shared.EnvFree5GCAmfIp)
 	if amfIPEnv == nil {
-		logger.Error("Environment variable not set", "variable", plugin_shared.EnvFree5GCAmfIp)
+		collector.logger.Error("Environment variable not set", "variable", plugin_shared.EnvFree5GCAmfIp)
 		os.Exit(1)
 	}
 
-	logger.SetLevel(hclog.Level(configuration.GetEnvInt(configuration.EnvLogLevel, int(hclog.Debug))))
+	collector.logger.SetLevel(hclog.Level(configuration.GetEnvInt(configuration.EnvLogLevel, int(hclog.Debug))))
 	metricPrefix = configuration.GetEnv(configuration.EnvMetricPrefix, "NWDAF_")
+
+	cookieName := configuration.GetEnvStrNoDefault(plugin_shared.EnvMagicCookieKeyName)
+	cookieValue := configuration.GetEnvStrNoDefault(plugin_shared.EnvMagicCookieKeyValue)
+	if cookieName == nil || cookieValue == nil {
+		collector.logger.Error("Missing COOKIE name and value variables for RPC")
+		os.Exit(1)
+	}
+	HandShakeConfigAmfCollector.MagicCookieKey = *cookieName
+	HandShakeConfigAmfCollector.MagicCookieValue = *cookieValue
+
+	F5GCAmfCollector.amfIP = *amfIPEnv
+	F5GCAmfCollector.amfSubURL = "http://" + *amfIPEnv + ":31682/namf-evts/v1/subscriptions"
+	F5GCAmfCollector.metricPrefix = metricPrefix
+}
+
+// main is the entry point for the F5GAmfCollector application.
+func main() {
+	F5GCAmfCollector.SetEnvironment()
 
 	debug_locally := false
 	args := os.Args[1:]
@@ -60,28 +77,22 @@ func main() {
 		}
 	}
 
-	collector := &F5GAmfCollector{
-		logger:       logger,
-		metricPrefix: metricPrefix,
-		amfIP:        *amfIPEnv,
-		amfSubURL:    "http://" + *amfIPEnv + ":31682/namf-evts/v1/subscriptions",
-	}
-
+	// Read the JSON template for the AMF subscription
 	fileContent, err := os.ReadFile("plugin/collectors/templates/F5GC_amf_request.json")
 	if err != nil {
-		logger.Error("Error reading file", "error", err)
+		F5GCAmfCollector.logger.Error("Error reading file", "error", err)
 	}
 	amfJsonSubBody = string(fileContent)
 
 	// If run as a standalone program, collect metrics locally, if loaded as a plugin, serve the plugin
 	if debug_locally {
-		collector.Collect()
+		F5GCAmfCollector.Collect()
 	} else {
 		// pluginMap is the map of plugins we can dispense.
 		var pluginMap = map[string]plugin.Plugin{
-			"F5GC_amf_collector": &plugin_shared.MetricCollectorPlugin{Impl: collector},
+			"F5GC_amf_collector": &plugin_shared.MetricCollectorPlugin{Impl: F5GCAmfCollector},
 		}
-		logger.Info("Offered plugins: ", pluginMap)
+		F5GCAmfCollector.logger.Info("Offered plugins: ", pluginMap)
 
 		plugin.Serve(&plugin.ServeConfig{
 			HandshakeConfig: HandShakeConfigAmfCollector,

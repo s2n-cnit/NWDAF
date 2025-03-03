@@ -20,13 +20,21 @@ type HPEAmfCollector struct {
 	metricPrefix string
 }
 
-var HandShakeConfigHPEAmfCollector = plugin.HandshakeConfig{
-	ProtocolVersion:  1,
-	MagicCookieKey:   "NWDAF_PLUGIN_COOKIE_KEY",
-	MagicCookieValue: "dsJha6J899JNjudayscn",
-}
+var (
+	HandShakeConfigHPEAmfCollector = plugin.HandshakeConfig{
+		ProtocolVersion: 1,
+	}
+	HPEAmfCollectorInstance = &HPEAmfCollector{
+		logger: hclog.New(&hclog.LoggerOptions{
+			Name:       "HPE_AMF_COLLECTOR",
+			Level:      hclog.Trace,
+			Output:     os.Stderr,
+			JSONFormat: true,
+		}),
+	}
+)
 
-func (collector *HPEAmfCollector) get_evn() {
+func (collector *HPEAmfCollector) SetEnvironment() {
 	collector.coreIp = configuration.GetEnvStrNoDefault(plugin_shared.EnvHpeCoreIp)
 	collector.username = configuration.GetEnvStrNoDefault(plugin_shared.EnvHpeUsername)
 	collector.password = configuration.GetEnvStrNoDefault(plugin_shared.EnvHpePassword)
@@ -35,6 +43,16 @@ func (collector *HPEAmfCollector) get_evn() {
 		collector.logger.Error("Missing HPE environment variables")
 		os.Exit(1)
 	}
+
+	cookieName := configuration.GetEnvStrNoDefault(plugin_shared.EnvMagicCookieKeyName)
+	coockieValue := configuration.GetEnvStrNoDefault(plugin_shared.EnvMagicCookieKeyValue)
+	if cookieName == nil || coockieValue == nil {
+		collector.logger.Error("Missing COOKIE name and value variables for RPC")
+		os.Exit(1)
+	}
+	HandShakeConfigHPEAmfCollector.MagicCookieKey = *cookieName
+	HandShakeConfigHPEAmfCollector.MagicCookieValue = *coockieValue
+
 }
 
 func (collector *HPEAmfCollector) BuildMetric(name string, description string, value float64) models.Metric {
@@ -128,29 +146,18 @@ func main() {
 		}
 	}
 
-	logger := hclog.New(&hclog.LoggerOptions{
-		Name:       "HPE_AMF_COLLECTOR",
-		Level:      hclog.Trace,
-		Output:     os.Stderr,
-		JSONFormat: true,
-	})
-
-	collector := &HPEAmfCollector{
-		logger: logger,
-	}
-
-	collector.get_evn()
-	collector.Login()
+	HPEAmfCollectorInstance.SetEnvironment()
+	HPEAmfCollectorInstance.Login()
 
 	if debug_locally {
-		collector.GetRequiredEnvVars()
-		collector.Collect()
+		HPEAmfCollectorInstance.GetRequiredEnvVars()
+		HPEAmfCollectorInstance.Collect()
 	} else {
 		// pluginMap is the map of plugins we can dispense.
 		var pluginMap = map[string]plugin.Plugin{
-			"HPE_amf_collector": &plugin_shared.MetricCollectorPlugin{Impl: collector},
+			"HPE_amf_collector": &plugin_shared.MetricCollectorPlugin{Impl: HPEAmfCollectorInstance},
 		}
-		logger.Info("Offered plugins: ", pluginMap)
+		HPEAmfCollectorInstance.logger.Info("Offered plugins: ", pluginMap)
 
 		plugin.Serve(&plugin.ServeConfig{
 			HandshakeConfig: HandShakeConfigHPEAmfCollector,

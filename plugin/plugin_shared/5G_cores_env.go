@@ -22,8 +22,8 @@ func (core CoreType) String() string {
 
 // ------------------------ Plugin Common ENV ----------------------
 
-const EnvMagicCookieKey = "MAGIC_COOKIE_KEY"
-const EnvMagicCookieValue = "MAGIC_COOKIE_VALUE"
+const EnvMagicCookieKeyName = "MAGIC_COOKIE_KEY"
+const EnvMagicCookieKeyValue = "MAGIC_COOKIE_VALUE"
 
 // ------------------------ HPE ----------------------
 

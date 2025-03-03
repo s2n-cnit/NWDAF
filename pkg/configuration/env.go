@@ -48,6 +48,19 @@ func LoadEnv() {
 	}
 }
 
+// SetEnv sets an environment variable
+// If the variable already exists, it will be overwritten
+//
+// Parameters:
+// - key: the name of the environment variable
+// - value: the value of the environment variable
+func SetEnv(key, value string) {
+	err := os.Setenv(key, value)
+	if err != nil {
+		logger.Error("Error setting environment variable", key)
+	}
+}
+
 // GetEnv reads an environment variable or returns a default value if not set
 func GetEnv(key, defaultValue string) string {
 	value, exists := GetEnvNoDefault(key)
