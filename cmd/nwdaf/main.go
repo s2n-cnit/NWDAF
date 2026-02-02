@@ -15,9 +15,13 @@ import (
 	"github.com/s2n-cnit/nwdaf/pkg/configuration"
 	"github.com/s2n-cnit/nwdaf/pkg/nrf"
 	"github.com/s2n-cnit/nwdaf/plugin/plugin_shared"
+	"net/http"
+	"net/http/httputil"
+	"net/url"
 	"os"
 	"os/exec"
 	"os/signal"
+	"strconv"
 	"syscall"
 )
 
@@ -31,6 +35,48 @@ var (
 	// microservices holds the running microservices.
 	microservices = map[string]*exec.Cmd{}
 )
+
+// setupReverseProxy creates a reverse proxy handler for the data archiver API.
+func setupReverseProxy(darchiverAPIPort int) http.Handler {
+	targetURL := fmt.Sprintf("http://127.0.0.1:%d", darchiverAPIPort)
+	target, err := url.Parse(targetURL)
+	if err != nil {
+		logger.Error("Failed to parse target URL for reverse proxy", "error", err)
+		os.Exit(1)
+	}
+
+	proxy := httputil.NewSingleHostReverseProxy(target)
+
+	// Add custom error handler
+	proxy.ErrorHandler = func(w http.ResponseWriter, r *http.Request, err error) {
+		logger.Error("Reverse proxy error", "error", err, "url", r.URL)
+		w.WriteHeader(http.StatusBadGateway)
+		fmt.Fprintf(w, "Data archiver service unavailable")
+	}
+
+	return proxy
+}
+
+// startHTTPServer starts the HTTP server with reverse proxy to data archiver.
+func startHTTPServer(config *configuration.Config) {
+	darchiverAPIPort := configuration.GetEnvInt(configuration.EnvDArchiverAPIPort, 8081)
+
+	mux := http.NewServeMux()
+
+	// Proxy /api/metrics* requests to data archiver
+	mux.Handle("/api/metrics", setupReverseProxy(darchiverAPIPort))
+
+	// Start server
+	serverAddr := fmt.Sprintf("%s:%d", config.Server.BindIP, config.Server.Port)
+	logger.Info("Starting NWDAF HTTP server", "address", serverAddr)
+
+	go func() {
+		if err := http.ListenAndServe(serverAddr, mux); err != nil {
+			logger.Error("Failed to start HTTP server", "error", err)
+			os.Exit(1)
+		}
+	}()
+}
 
 // main is the entry point for the NWDAF application.
 func main() {
@@ -50,10 +96,19 @@ func main() {
 
 	RegisterToNRF(configur)
 
-	startMicroservice("cmd/darchiver/build/darchiver", map[string]string{}, false, "darchiver")
+	// Start the data archiver microservice
+	darchiverEnv := map[string]string{}
+	// Pass DARCHIVER_API_PORT if set in environment
+	if apiPort := configuration.GetEnvIntNoDefault(configuration.EnvDArchiverAPIPort); apiPort != nil {
+		darchiverEnv[configuration.EnvDArchiverAPIPort] = strconv.Itoa(*apiPort)
+	}
+	startMicroservice("cmd/darchiver/build/darchiver", darchiverEnv, false, "darchiver")
 
 	// Start monitoring slices
 	StartMonitorSlices(configur)
+
+	// Start HTTP server with reverse proxy
+	startHTTPServer(configur)
 
 	// Wait for a signal to terminate the program
 	sig := <-sigChan

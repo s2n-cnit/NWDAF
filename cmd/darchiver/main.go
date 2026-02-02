@@ -3,6 +3,7 @@ package main
 import (
 	"encoding/json"
 	"fmt"
+	"github.com/gin-gonic/gin"
 	"github.com/hashicorp/go-hclog"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
@@ -133,6 +134,42 @@ func GetMetricList() []string {
 	return metricList
 }
 
+// GetAllMetrics returns a list of all metrics with their data.
+//
+// Returns:
+// - A slice of Metric objects containing all metrics.
+func GetAllMetrics() []models.Metric {
+	metricList := make([]models.Metric, 0, len(MetricAndCollectorMap))
+	for key := range MetricAndCollectorMap {
+		metricList = append(metricList, MetricAndCollectorMap[key].Metric)
+	}
+	return metricList
+}
+
+// setupAPIRouter sets up the Gin router with API endpoints.
+//
+// Returns:
+// - A configured Gin Engine.
+func setupAPIRouter() *gin.Engine {
+	// Set Gin to release mode based on log level
+	if logger.GetLevel() > hclog.Debug {
+		gin.SetMode(gin.ReleaseMode)
+	}
+
+	router := gin.Default()
+
+	// API endpoints
+	api := router.Group("/api")
+	{
+		api.GET("/metrics", func(c *gin.Context) {
+			metrics := GetAllMetrics()
+			c.JSON(http.StatusOK, metrics)
+		})
+	}
+
+	return router
+}
+
 // Start initializes the configuration, subscribes to Redis topics, and starts the Prometheus metric exporter.
 func Start() {
 	// Load the configuration settings.
@@ -174,6 +211,17 @@ func Start() {
 		uri := fmt.Sprintf(":%d", prometheusPort)
 		logger.Info("Starting Prometheus metric exporter", "uri", uri)
 		logrus.Fatal(http.ListenAndServe(uri, nil))
+	}()
+
+	// Start a goroutine to handle API endpoints using Gin.
+	go func() {
+		apiPort := configuration.GetEnvInt(configuration.EnvDArchiverAPIPort, 8081)
+		router := setupAPIRouter()
+		uri := fmt.Sprintf("127.0.0.1:%d", apiPort)
+		logger.Info("Starting API server on loopback", "uri", uri)
+		if err := router.Run(uri); err != nil {
+			logrus.Fatal("Failed to start API server:", err)
+		}
 	}()
 
 	// Register the metric counter with Prometheus.

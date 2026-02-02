@@ -14,6 +14,7 @@ const EnvRedisPassword = "REDIS_PASSWORD"
 const EnvPrometheusLocalPort = "PROMETHEUS_LOCAL_PORT"
 const EnvLogLevel = "LOG_LEVEL"
 const EnvMetricPrefix = "METRIC_PREFIX"
+const EnvDArchiverAPIPort = "DARCHIVER_API_PORT"
 
 var logger = hclog.New(&hclog.LoggerOptions{Name: "Environ", Output: os.Stdout, Level: hclog.Debug})
 
