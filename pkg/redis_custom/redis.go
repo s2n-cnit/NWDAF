@@ -11,13 +11,17 @@ import (
 )
 
 func NewCustomClient(clientName string, loggingLevel hclog.Level, redisUri string, redisPwd *string, moduleInfo *models.Module) RedisClient {
-	redisPwdCopy := strings.Clone(*redisPwd)
+	var redisPwdCopy *string
+	if redisPwd != nil {
+		pwd := strings.Clone(*redisPwd)
+		redisPwdCopy = &pwd
+	}
 	client := RedisClient{
 		clientName:  clientName,
 		logger:      nil,
 		loggerLevel: loggingLevel,
 		redisUri:    redisUri,
-		redisPwd:    &redisPwdCopy,
+		redisPwd:    redisPwdCopy,
 		Ctx:         nil,
 		moduleInfo:  moduleInfo,
 	}

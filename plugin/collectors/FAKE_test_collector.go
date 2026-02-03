@@ -1,14 +1,15 @@
 package main
 
 import (
+	"math/rand"
+	"os"
+	"time"
+
 	"github.com/hashicorp/go-hclog"
 	"github.com/hashicorp/go-plugin"
 	"github.com/s2n-cnit/nwdaf/pkg/configuration"
 	"github.com/s2n-cnit/nwdaf/pkg/models"
 	"github.com/s2n-cnit/nwdaf/plugin/plugin_shared"
-	"math/rand"
-	"os"
-	"time"
 )
 
 // FakeCollector is a fake collector for testing purposes that generates random metrics.
@@ -156,6 +157,20 @@ func (collector *FakeCollector) Collect() []models.Metric {
 			Value:       collector.randomFloat(95, 99.5),
 			NFid:        "ausf-001",
 			NFType:      "AUSF",
+		},
+		{
+			Name:        "NWDAF_cpu_usage_percent",
+			Description: "CPU usage percentage by NWDAF",
+			Value:       collector.randomFloat(0, 5),
+			NFid:        "nwdaf-001",
+			NFType:      "NWDAF",
+		},
+		{
+			Name:        "NWDAF_memory_usage_bytes",
+			Description: "Memory usage in bytes by NWDAF",
+			Value:       collector.randomFloat(40, 45.5),
+			NFid:        "nwdaf-001",
+			NFType:      "NWDAF",
 		},
 	}
 

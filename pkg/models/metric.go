@@ -1,14 +1,18 @@
 package models
 
-import "github.com/prometheus/client_golang/prometheus"
+import (
+	"github.com/prometheus/client_golang/prometheus"
+	"time"
+)
 
 // Metric is a struct that represents a metric.
 type Metric struct {
-	Name        string  `bson:"name"`
-	Description string  `bson:"description"`
-	Value       float64 `bson:"value"`
-	NFid        string  `bson:"nfid"`
-	NFType      string  `bson:"nfType"`
+	Name        string    `bson:"name" json:"name"`
+	Description string    `bson:"description" json:"description"`
+	Value       float64   `bson:"value" json:"value"`
+	NFid        string    `bson:"nfid" json:"nfid"`
+	NFType      string    `bson:"nfType" json:"nfType"`
+	ReceivedAt  time.Time `bson:"receivedAt" json:"receivedAt"` // Timestamp when metric was received by darchiver
 }
 
 // Equal compares two Metric instances for equality.

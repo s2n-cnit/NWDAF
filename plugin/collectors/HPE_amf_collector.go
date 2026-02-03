@@ -2,13 +2,14 @@ package main
 
 import (
 	"fmt"
+	"os"
+
 	"github.com/hashicorp/go-hclog"
 	"github.com/hashicorp/go-plugin"
 	"github.com/s2n-cnit/nwdaf/pkg/configuration"
 	http_internal "github.com/s2n-cnit/nwdaf/pkg/http-internal"
 	"github.com/s2n-cnit/nwdaf/pkg/models"
 	"github.com/s2n-cnit/nwdaf/plugin/plugin_shared"
-	"os"
 )
 
 type HPEAmfCollector struct {

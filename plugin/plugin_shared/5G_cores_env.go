@@ -13,6 +13,8 @@ const (
 	CoreTypeOpen5GS CoreType = "O5GS"
 	// CoreTypeOpenAirInterface represents the OpenAirInterface core network type.
 	CoreTypeOpenAirInterface CoreType = "OAI"
+	// CoreTypeFake represents a fake core network type for testing.
+	CoreTypeFake CoreType = "FAKE"
 )
 
 // String method to convert the enum value to a string.
@@ -82,4 +84,18 @@ func Free5GCCoreEnv(amfIp string, coreMetricPrefix string) map[string]string {
 		EnvFree5GCAmfIp:        amfIp,
 		EnvFree5GCMetricPrefix: coreMetricPrefix,
 	}
+}
+
+// ------------------------ FAKE (for testing) ----------------------
+
+// FakeRequiredEnvVars lists the required environment variables for FAKE plugins.
+// The fake collector doesn't require any special environment variables.
+var FakeRequiredEnvVars = []string{}
+
+// FakeCoreEnv returns a map of environment variables for the FAKE core network.
+// The fake collector doesn't require any special environment variables.
+//
+// Returns an empty map.
+func FakeCoreEnv() map[string]string {
+	return map[string]string{}
 }

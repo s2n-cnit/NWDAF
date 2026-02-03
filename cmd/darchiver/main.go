@@ -13,6 +13,7 @@ import (
 	"github.com/sirupsen/logrus"
 	"net/http"
 	"os"
+	"time"
 )
 
 var (
@@ -76,6 +77,7 @@ func updateGaugeValue(vec *prometheus.GaugeVec, value float64) {
 }
 
 // AddMetric adds a new metric or updates an existing one.
+// Sets ReceivedAt timestamp when the metric is received.
 //
 // Parameters:
 // - metric: The Metric object to be added or updated.
@@ -83,8 +85,14 @@ func updateGaugeValue(vec *prometheus.GaugeVec, value float64) {
 // Returns:
 // - A MetricAndCollector object containing the added or updated metric and its collector.
 func AddMetric(metric models.Metric) models.MetricAndCollector {
+	// Set the received timestamp
+	metric.ReceivedAt = time.Now()
+
 	if value, exists := MetricAndCollectorMap[metric.Name]; exists {
 		updateGaugeValue(value.Collector.(*prometheus.GaugeVec), metric.Value)
+		// Update the metric with new value and timestamp
+		value.Metric = metric
+		MetricAndCollectorMap[metric.Name] = value
 		return value
 	}
 	logger.Debug("Adding metric", "name", metric.Name, "description", metric.Description)
@@ -93,45 +101,6 @@ func AddMetric(metric models.Metric) models.MetricAndCollector {
 		Collector: newGaugeCollector(metric),
 	}
 	return MetricAndCollectorMap[metric.Name]
-}
-
-// DeleteMetric deletes a metric from the MetricAndCollectorMap.
-//
-// Parameters:
-// - name: The name of the metric to be deleted.
-func DeleteMetric(name string) {
-	if _, exists := MetricAndCollectorMap[name]; exists {
-		logger.Debug("Removing metric", "name", name)
-		deleteMetric(name)
-	} else {
-		logger.Error("Metric not found", "name", name)
-	}
-}
-
-// GetMetric retrieves a metric by name.
-//
-// Parameters:
-// - name: The name of the metric to retrieve.
-//
-// Returns:
-// - A Metric object representing the retrieved metric.
-func GetMetric(name string) models.Metric {
-	if value, exists := MetricAndCollectorMap[name]; exists {
-		return value.Metric
-	}
-	return models.Metric{}
-}
-
-// GetMetricList returns a list of all metric names.
-//
-// Returns:
-// - A slice of strings containing the names of all metrics.
-func GetMetricList() []string {
-	metricList := make([]string, 0, len(MetricAndCollectorMap))
-	for key := range MetricAndCollectorMap {
-		metricList = append(metricList, MetricAndCollectorMap[key].Metric.Name)
-	}
-	return metricList
 }
 
 // GetAllMetrics returns a list of all metrics with their data.
@@ -144,6 +113,39 @@ func GetAllMetrics() []models.Metric {
 		metricList = append(metricList, MetricAndCollectorMap[key].Metric)
 	}
 	return metricList
+}
+
+// CleanupExpiredMetrics removes metrics that haven't been updated for more than 1 hour.
+func CleanupExpiredMetrics() {
+	expirationDuration := 1 * time.Hour
+	now := time.Now()
+	expiredCount := 0
+
+	for name, metricAndCollector := range MetricAndCollectorMap {
+		if now.Sub(metricAndCollector.Metric.ReceivedAt) > expirationDuration {
+			logger.Debug("Metric expired, removing", "name", name, "receivedAt", metricAndCollector.Metric.ReceivedAt)
+			deleteMetric(name)
+			expiredCount++
+		}
+	}
+
+	if expiredCount > 0 {
+		logger.Info("Cleaned up expired metrics", "count", expiredCount)
+	}
+}
+
+// startMetricExpirationCleanup starts a goroutine that periodically cleans up expired metrics.
+func startMetricExpirationCleanup() {
+	go func() {
+		// Run cleanup every 10 minutes
+		ticker := time.NewTicker(10 * time.Minute)
+		defer ticker.Stop()
+
+		for range ticker.C {
+			CleanupExpiredMetrics()
+		}
+	}()
+	logger.Info("Started metric expiration cleanup task (runs every 10 minutes)")
 }
 
 // setupAPIRouter sets up the Gin router with API endpoints.
@@ -227,6 +229,9 @@ func Start() {
 	// Register the metric counter with Prometheus.
 	prometheus.MustRegister(metricCounter)
 
+	// Start the metric expiration cleanup task
+	startMetricExpirationCleanup()
+
 	// Process messages received from the Redis topics.
 	for msg := range ch {
 		logger.Debug("Received message from topic", "topic", msg.Channel, "message", msg.Payload)
@@ -241,8 +246,6 @@ func Start() {
 		// Add or update the received metric.
 		AddMetric(metric)
 	}
-
-	// TODO when does a metric expire and must be removed from the published metrics?
 }
 
 // main is the entry point of the application.

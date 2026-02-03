@@ -40,7 +40,7 @@ var (
 	}
 	rpcClientList           []*plugin.ClientProtocol
 	pluginList              []interface{}
-	scrapingIntervalSeconds = 60
+	scrapingIntervalSeconds = 10
 	scrapingInterval        = time.Duration(scrapingIntervalSeconds) * time.Second
 	coreType                *string
 	metricsPrefix           string
@@ -158,6 +158,13 @@ func LoadPlugin(file os.DirEntry) *plugin.Client {
 	LoadedPlugin, err := rpcClient.Dispense(file.Name())
 	if err != nil {
 		logger.Error("Error loading remote plugin", "plugin", file.Name(), "error", err)
+		return client
+	}
+
+	// Check if LoadedPlugin is nil
+	if LoadedPlugin == nil {
+		logger.Error("Plugin dispense returned nil", "plugin", file.Name())
+		return client
 	}
 
 	//Check if all required environment variables are set for the specific plugin and SET THEM

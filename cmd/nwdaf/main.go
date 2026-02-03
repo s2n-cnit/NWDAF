@@ -94,15 +94,33 @@ func main() {
 		os.Exit(1)
 	}
 
-	RegisterToNRF(configur)
+	// RegisterToNRF(configur)
 
 	// Start the data archiver microservice
-	darchiverEnv := map[string]string{}
-	// Pass DARCHIVER_API_PORT if set in environment
+	darchiverEnv := map[string]string{
+		configuration.EnvRedisUri:            configur.Redis.URI,
+		configuration.EnvPrometheusLocalPort: strconv.Itoa(configur.PrometheusPort),
+	}
+	// Pass optional environment variables
+	if configur.Redis.Password != "" {
+		darchiverEnv[configuration.EnvRedisPassword] = configur.Redis.Password
+	}
 	if apiPort := configuration.GetEnvIntNoDefault(configuration.EnvDArchiverAPIPort); apiPort != nil {
 		darchiverEnv[configuration.EnvDArchiverAPIPort] = strconv.Itoa(*apiPort)
 	}
+	darchiverEnv[configuration.EnvLogLevel] = strconv.Itoa(int(configur.LogLevel))
 	startMicroservice("cmd/darchiver/build/darchiver", darchiverEnv, false, "darchiver")
+
+	// Start the analytics engine microservice
+	analyticsEnv := map[string]string{
+		configuration.EnvRedisUri: configur.Redis.URI,
+		configuration.EnvCoreType: string(configur.CoreType),
+		configuration.EnvLogLevel: strconv.Itoa(int(configur.LogLevel)),
+	}
+	if configur.Redis.Password != "" {
+		analyticsEnv[configuration.EnvRedisPassword] = configur.Redis.Password
+	}
+	startMicroservice("cmd/analytics_engine/build/analytics_engine", analyticsEnv, false, "analytics_engine")
 
 	// Start monitoring slices
 	StartMonitorSlices(configur)
@@ -129,6 +147,8 @@ func StartMonitorSlices(configur *configuration.Config) {
 			envMap = plugin_shared.HPECoreEnv(slice.CoreEndpointIp, slice.Username, slice.Password, slice.ID)
 		case plugin_shared.CoreTypeFree5GC:
 			envMap = plugin_shared.Free5GCCoreEnv(slice.AmfIPs[0], slice.ID)
+		case plugin_shared.CoreTypeFake:
+			envMap = plugin_shared.FakeCoreEnv()
 		default:
 			logger.Error("Invalid core type", "core_type", configur.CoreType)
 			os.Exit(1)
