@@ -76,9 +76,26 @@ func (p *HPESarimaConnectedUEPlugin) SetEnvironment(debugMode bool) {
 	}
 }
 
-// GetName returns the unique name for this plugin.
+// GetName returns the unique name for this analytics plugin.
 func (p *HPESarimaConnectedUEPlugin) GetName() string {
 	return "HPESarimaConnectedUEPlugin"
+}
+
+// GetDescription returns a description of what this plugin does.
+func (p *HPESarimaConnectedUEPlugin) GetDescription() string {
+	return "SARIMA forecasting algorithm for predicting number of connected UEs from HPE AMF metrics"
+}
+
+// GetProducedMetrics returns the list of metric names this plugin produces.
+func (p *HPESarimaConnectedUEPlugin) GetProducedMetrics() []string {
+	return []string{fmt.Sprintf("%s_forecasted_value", p.subscribedMetricName)}
+}
+
+// GetMetricDescriptions returns descriptions for subscribed metrics.
+func (p *HPESarimaConnectedUEPlugin) GetMetricDescriptions() map[string]string {
+	return map[string]string{
+		p.subscribedMetricName: "Number of connected devices from HPE AMF",
+	}
 }
 
 // GetSubscribedMetrics returns the list of metrics this plugin subscribes to.

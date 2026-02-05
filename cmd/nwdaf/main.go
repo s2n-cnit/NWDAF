@@ -69,9 +69,13 @@ func startHTTPServer(config *configuration.Config) {
 	// Proxy /api/metrics* requests to data archiver
 	mux.Handle("/api/metrics", setupReverseProxy(darchiverAPIPort, "Data Archiver"))
 
-	// Proxy /api/v1/computed-metrics* requests to analytics engine
+	// Proxy /api/computed-metrics* requests to analytics engine
 	mux.Handle("/api/computed-metrics", setupReverseProxy(analyticsEngineAPIPort, "Analytics Engine"))
 	mux.Handle("/api/computed-metrics/", setupReverseProxy(analyticsEngineAPIPort, "Analytics Engine"))
+
+	// Proxy /api/plugins requests to analytics engine
+	mux.Handle("/api/plugins", setupReverseProxy(analyticsEngineAPIPort, "Analytics Engine"))
+	mux.Handle("/api/models", setupReverseProxy(analyticsEngineAPIPort, "Analytics Engine"))
 
 	// Serve web UI from web directory
 	webHandler := web.GetHandler("web")

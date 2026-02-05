@@ -76,9 +76,31 @@ func (p *SarimaNuePlugin) SetEnvironment(debugMode bool) {
 	p.newSamples = make(map[string]int)
 }
 
-// GetName returns the unique name for this plugin.
+// GetName returns the unique name of the plugin
 func (p *SarimaNuePlugin) GetName() string {
 	return "SarimaNuePlugin"
+}
+
+// GetDescription returns a description of what this plugin does.
+func (p *SarimaNuePlugin) GetDescription() string {
+	return "FAKE SARIMA forecasting algorithm for testing purposes - generates predictions for CPU and memory metrics"
+}
+
+// GetProducedMetrics returns the list of metric names this plugin produces.
+func (p *SarimaNuePlugin) GetProducedMetrics() []string {
+	producedMetrics := make([]string, 0, len(SubscribedMetrics))
+	for _, metricName := range SubscribedMetrics {
+		producedMetrics = append(producedMetrics, fmt.Sprintf("%s_forecasted_value", metricName))
+	}
+	return producedMetrics
+}
+
+// GetMetricDescriptions returns descriptions for subscribed metrics.
+func (p *SarimaNuePlugin) GetMetricDescriptions() map[string]string {
+	return map[string]string{
+		"NWDAF_cpu_usage_percent":  "CPU utilization percentage (fake test data)",
+		"NWDAF_memory_usage_bytes": "Memory usage in bytes (fake test data)",
+	}
 }
 
 // GetSubscribedMetrics returns the list of metrics this plugin subscribes to.

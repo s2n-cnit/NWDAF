@@ -66,6 +66,7 @@ type ComputedMetricBuffer struct {
 // The wrapper maintains a buffer of computed metrics that are automatically cleaned up
 // after they expire (based on METRIC_EXPIRATION_SECONDS environment variable).
 type AnalyticsPluginWrapper struct {
+	ID                string                     // Unique identifier for this plugin instance
 	Plugin            shared2.AnalyticsAlgorithm // The analytics plugin implementation
 	SubscribedMetrics map[string]bool            // Map for fast lookup of subscribed metrics
 	MinimumSamples    int                        // Minimum samples required before execution
@@ -216,6 +217,7 @@ func LoadPlugin(file os.DirEntry) *plugin.Client {
 		}
 
 		wrapper := AnalyticsPluginWrapper{
+			ID:                fmt.Sprintf("PLUGIN_%03d", len(pluginList)+1),
 			Plugin:            analyticsPlugin,
 			SubscribedMetrics: subscribedMap,
 			MinimumSamples:    analyticsPlugin.GetMinimumSamples(),
@@ -378,6 +380,7 @@ func startHTTPServer() {
 
 	http.HandleFunc("/api/computed-metrics", handleGetAllComputedMetrics)
 	http.HandleFunc("/api/computed-metrics/", handleGetComputedMetricByName)
+	http.HandleFunc("/api/models", handleGetPlugins)
 
 	addr := fmt.Sprintf(":%d", port)
 	logger.Info("Starting Analytics Engine HTTP API server", "port", port)
@@ -451,6 +454,78 @@ func handleGetComputedMetricByName(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
 	if err := json.NewEncoder(w).Encode(response); err != nil {
+		logger.Error("Failed to encode response", "error", err)
+		http.Error(w, "Internal server error", http.StatusInternalServerError)
+	}
+}
+
+// handleGetPlugins returns information about all loaded analytics plugins.
+func handleGetPlugins(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	logger.Debug("GET /api/plugins - Fetching loaded plugins information")
+
+	pluginInfoList := make([]PluginInfo, 0, len(pluginList))
+
+	for _, wrapper := range pluginList {
+		// Get plugin metadata via RPC
+		description := wrapper.Plugin.GetDescription()
+		producedMetricNames := wrapper.Plugin.GetProducedMetrics()
+		metricDescriptions := wrapper.Plugin.GetMetricDescriptions()
+
+		// Build required metrics list
+		subscribedMetricNames := wrapper.Plugin.GetSubscribedMetrics()
+		requiredMetrics := make([]models.Metric, 0, len(subscribedMetricNames))
+		for _, metricName := range subscribedMetricNames {
+			// Get description from plugin, or use default
+			desc, exists := metricDescriptions[metricName]
+			if !exists {
+				desc = "Metric monitored by " + wrapper.Name
+			}
+			requiredMetrics = append(requiredMetrics, models.Metric{
+				Name:        metricName,
+				Description: desc,
+			})
+		}
+
+		// Build produced metrics list
+		producedMetrics := make([]models.Metric, 0, len(producedMetricNames))
+		for _, metricName := range producedMetricNames {
+			// Use a generic description for produced metrics
+			producedDesc := "Computed metric produced by " + wrapper.Name
+			producedMetrics = append(producedMetrics, models.Metric{
+				Name:        metricName,
+				Description: producedDesc,
+			})
+		}
+
+		// Format last execution time
+		lastExecTime := ""
+		if !wrapper.LastExecutionTime.IsZero() {
+			lastExecTime = wrapper.LastExecutionTime.Format("2006-01-02T15:04:05Z07:00")
+		}
+
+		pluginInfo := PluginInfo{
+			ID:                wrapper.ID,
+			Model:             wrapper.Name,
+			Description:       description,
+			RequiredMetrics:   requiredMetrics,
+			ProducedMetrics:   producedMetrics,
+			MinimumSamples:    wrapper.MinimumSamples,
+			ExecutionCount:    int(wrapper.ExecutionCount),
+			LastExecutionTime: lastExecTime,
+		}
+
+		pluginInfoList = append(pluginInfoList, pluginInfo)
+	}
+
+	logger.Info("Returning plugin information", "count", len(pluginInfoList))
+
+	w.Header().Set("Content-Type", "application/json")
+	if err := json.NewEncoder(w).Encode(pluginInfoList); err != nil {
 		logger.Error("Failed to encode response", "error", err)
 		http.Error(w, "Internal server error", http.StatusInternalServerError)
 	}

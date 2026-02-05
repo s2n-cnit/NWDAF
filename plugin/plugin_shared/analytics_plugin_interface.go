@@ -39,6 +39,18 @@ type AnalyticsAlgorithm interface {
 
 	// GetName returns a unique name for this analytics plugin.
 	GetName() string
+
+	// GetDescription returns a human-readable description of what this plugin does.
+	GetDescription() string
+
+	// GetProducedMetrics returns the list of metric names this plugin produces.
+	// These are the computed/forecasted metrics that will be published.
+	GetProducedMetrics() []string
+
+	// GetMetricDescriptions returns descriptions for subscribed metrics.
+	// Returns a map where keys are metric names and values are descriptions.
+	// If a metric is not in the map, a default description will be used.
+	GetMetricDescriptions() map[string]string
 }
 
 // AnalyticsAlgorithmRPC is the RPC client implementation of AnalyticsAlgorithm.
@@ -106,6 +118,39 @@ func (g *AnalyticsAlgorithmRPC) GetName() string {
 	return resp
 }
 
+// GetDescription calls the remote GetDescription method via RPC.
+func (g *AnalyticsAlgorithmRPC) GetDescription() string {
+	var resp string
+	err := g.client.Call("Plugin.GetDescription", new(interface{}), &resp)
+	if err != nil {
+		// Return empty string if method not implemented (backward compatibility)
+		return ""
+	}
+	return resp
+}
+
+// GetProducedMetrics calls the remote GetProducedMetrics method via RPC.
+func (g *AnalyticsAlgorithmRPC) GetProducedMetrics() []string {
+	var resp []string
+	err := g.client.Call("Plugin.GetProducedMetrics", new(interface{}), &resp)
+	if err != nil {
+		// Return empty slice if method not implemented (backward compatibility)
+		return []string{}
+	}
+	return resp
+}
+
+// GetMetricDescriptions calls the remote GetMetricDescriptions method via RPC.
+func (g *AnalyticsAlgorithmRPC) GetMetricDescriptions() map[string]string {
+	var resp map[string]string
+	err := g.client.Call("Plugin.GetMetricDescriptions", new(interface{}), &resp)
+	if err != nil {
+		// Return empty map if method not implemented (backward compatibility)
+		return make(map[string]string)
+	}
+	return resp
+}
+
 // AnalyticsAlgorithmRPCServer is the RPC server that AnalyticsAlgorithmRPC talks to.
 type AnalyticsAlgorithmRPCServer struct {
 	Impl AnalyticsAlgorithm
@@ -144,6 +189,24 @@ func (s *AnalyticsAlgorithmRPCServer) GetRequiredEnvVars(args interface{}, resp 
 // GetName calls GetName on the implementation.
 func (s *AnalyticsAlgorithmRPCServer) GetName(args interface{}, resp *string) error {
 	*resp = s.Impl.GetName()
+	return nil
+}
+
+// GetDescription calls GetDescription on the implementation.
+func (s *AnalyticsAlgorithmRPCServer) GetDescription(args interface{}, resp *string) error {
+	*resp = s.Impl.GetDescription()
+	return nil
+}
+
+// GetProducedMetrics calls GetProducedMetrics on the implementation.
+func (s *AnalyticsAlgorithmRPCServer) GetProducedMetrics(args interface{}, resp *[]string) error {
+	*resp = s.Impl.GetProducedMetrics()
+	return nil
+}
+
+// GetMetricDescriptions calls GetMetricDescriptions on the implementation.
+func (s *AnalyticsAlgorithmRPCServer) GetMetricDescriptions(args interface{}, resp *map[string]string) error {
+	*resp = s.Impl.GetMetricDescriptions()
 	return nil
 }
 
