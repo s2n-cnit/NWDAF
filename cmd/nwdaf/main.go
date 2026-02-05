@@ -9,12 +9,6 @@ package main
 
 import (
 	"fmt"
-	"github.com/free5gc/openapi/models"
-	"github.com/google/uuid"
-	"github.com/hashicorp/go-hclog"
-	"github.com/s2n-cnit/nwdaf/pkg/configuration"
-	"github.com/s2n-cnit/nwdaf/pkg/nrf"
-	"github.com/s2n-cnit/nwdaf/plugin/plugin_shared"
 	"net/http"
 	"net/http/httputil"
 	"net/url"
@@ -23,25 +17,33 @@ import (
 	"os/signal"
 	"strconv"
 	"syscall"
+
+	"github.com/free5gc/openapi/models"
+	"github.com/google/uuid"
+	"github.com/hashicorp/go-hclog"
+	"github.com/s2n-cnit/nwdaf/internal/web"
+	"github.com/s2n-cnit/nwdaf/pkg/configuration"
+	"github.com/s2n-cnit/nwdaf/pkg/nrf"
+	"github.com/s2n-cnit/nwdaf/plugin/plugin_shared"
 )
 
 var (
 	// logger is the global logger for the NWDAF application.
 	logger = hclog.New(&hclog.LoggerOptions{Name: "NWDAF", Output: os.Stdout, Level: hclog.Debug})
 	// nrfClient is the client used to interact with the NRF.
-	nrfClient nrf.NRFClient
+	nrfClient nrf.ClientNRF
 	// nfID is the unique identifier for the NF instance.
 	nfID uuid.UUID
 	// microservices holds the running microservices.
 	microservices = map[string]*exec.Cmd{}
 )
 
-// setupReverseProxy creates a reverse proxy handler for the data archiver API.
-func setupReverseProxy(darchiverAPIPort int) http.Handler {
-	targetURL := fmt.Sprintf("http://127.0.0.1:%d", darchiverAPIPort)
+// setupReverseProxy creates a reverse proxy handler for a target service.
+func setupReverseProxy(port int, serviceName string) http.Handler {
+	targetURL := fmt.Sprintf("http://127.0.0.1:%d", port)
 	target, err := url.Parse(targetURL)
 	if err != nil {
-		logger.Error("Failed to parse target URL for reverse proxy", "error", err)
+		logger.Error("Failed to parse target URL for reverse proxy", "error", err, "service", serviceName)
 		os.Exit(1)
 	}
 
@@ -49,22 +51,32 @@ func setupReverseProxy(darchiverAPIPort int) http.Handler {
 
 	// Add custom error handler
 	proxy.ErrorHandler = func(w http.ResponseWriter, r *http.Request, err error) {
-		logger.Error("Reverse proxy error", "error", err, "url", r.URL)
+		logger.Error("Reverse proxy error", "error", err, "url", r.URL, "service", serviceName)
 		w.WriteHeader(http.StatusBadGateway)
-		fmt.Fprintf(w, "Data archiver service unavailable")
+		fmt.Fprintf(w, "%s service unavailable", serviceName)
 	}
 
 	return proxy
 }
 
-// startHTTPServer starts the HTTP server with reverse proxy to data archiver.
+// startHTTPServer starts the HTTP server with reverse proxies to data archiver and analytics engine.
 func startHTTPServer(config *configuration.Config) {
 	darchiverAPIPort := configuration.GetEnvInt(configuration.EnvDArchiverAPIPort, 8081)
+	analyticsEngineAPIPort := configuration.GetEnvInt(configuration.EnvAnalyticsEngineAPIPort, 8084)
 
 	mux := http.NewServeMux()
 
 	// Proxy /api/metrics* requests to data archiver
-	mux.Handle("/api/metrics", setupReverseProxy(darchiverAPIPort))
+	mux.Handle("/api/metrics", setupReverseProxy(darchiverAPIPort, "Data Archiver"))
+
+	// Proxy /api/v1/computed-metrics* requests to analytics engine
+	mux.Handle("/api/computed-metrics", setupReverseProxy(analyticsEngineAPIPort, "Analytics Engine"))
+	mux.Handle("/api/computed-metrics/", setupReverseProxy(analyticsEngineAPIPort, "Analytics Engine"))
+
+	// Serve web UI from web directory
+	webHandler := web.GetHandler("web")
+	mux.Handle("/", webHandler)
+	logger.Info("Web dashboard available", "url", fmt.Sprintf("http://%s:%d", config.Server.BindIP, config.Server.Port))
 
 	// Start server
 	serverAddr := fmt.Sprintf("%s:%d", config.Server.BindIP, config.Server.Port)
@@ -119,6 +131,12 @@ func main() {
 	}
 	if configur.Redis.Password != "" {
 		analyticsEnv[configuration.EnvRedisPassword] = configur.Redis.Password
+	}
+	if apiPort := configuration.GetEnvIntNoDefault(configuration.EnvAnalyticsEngineAPIPort); apiPort != nil {
+		analyticsEnv[configuration.EnvAnalyticsEngineAPIPort] = strconv.Itoa(*apiPort)
+	}
+	if expirationSeconds := configuration.GetEnvIntNoDefault(configuration.EnvMetricExpirationSeconds); expirationSeconds != nil {
+		analyticsEnv[configuration.EnvMetricExpirationSeconds] = strconv.Itoa(*expirationSeconds)
 	}
 	startMicroservice("cmd/analytics_engine/build/analytics_engine", analyticsEnv, false, "analytics_engine")
 
@@ -229,7 +247,7 @@ func killProcess(cmd *exec.Cmd, name string) {
 func RegisterToNRF(configur *configuration.Config) {
 	nfID = uuid.New()
 	logger.Info(fmt.Sprintf("The function generated UUID is: %v", nfID.String()))
-	nrfClient = nrf.NRFClient{NRFIp: configur.NRFIp, Logger: logger}
+	nrfClient = nrf.ClientNRF{NRFIp: configur.NRFIp, Logger: logger}
 	if err := nrfClient.RegisterToNRF(nfID, models.IpAddress{Ipv4Addr: ""}); err != nil {
 		logger.Error("Error registering to NRF", "error", err)
 		os.Exit(1)

@@ -2,17 +2,18 @@ package main
 
 import (
 	"fmt"
+	"os"
+
 	"github.com/hashicorp/go-hclog"
 	"github.com/hashicorp/go-plugin"
 	"github.com/s2n-cnit/nwdaf/pkg/configuration"
 	"github.com/s2n-cnit/nwdaf/pkg/models"
 	"github.com/s2n-cnit/nwdaf/plugin/plugin_shared"
-	"os"
 )
 
-// MovingAveragePlugin implements a simple moving average analytics algorithm.
+// MovAvgPlugin implements a simple moving average analytics algorithm.
 // It subscribes to CPU usage metrics and computes a moving average.
-type MovingAveragePlugin struct {
+type MovAvgPlugin struct {
 	logger         hclog.Logger
 	metricBuffer   []models.Metric
 	windowSize     int
@@ -20,24 +21,24 @@ type MovingAveragePlugin struct {
 }
 
 var (
-	// HandShakeConfigAnalytics is the handshake configuration for analytics plugins.
+	// HandShakeConfigAnalytics SarimaNueHandShakeConfigAnalytics is the handshake configuration for analytics plugins.
 	HandShakeConfigAnalytics = plugin.HandshakeConfig{
 		ProtocolVersion: 1,
 	}
 
-	MovingAverageAlgorithm = &MovingAveragePlugin{
+	MovingAverageAlgorithm = &MovAvgPlugin{
 		logger: hclog.New(&hclog.LoggerOptions{
 			Level:      hclog.Debug,
 			Output:     os.Stderr,
 			JSONFormat: true,
 		}),
 		metricBuffer:   make([]models.Metric, 0),
-		windowSize:     5, // Use last 5 samples for moving average
+		windowSize:     5, // Use the last 5 samples for moving average
 		minimumSamples: 3, // Need at least 3 samples before computing
 	}
 )
 
-func (p *MovingAveragePlugin) SetEnvironment(debugMode bool) {
+func (p *MovAvgPlugin) SetEnvironment(debugMode bool) {
 	configuration.LoadEnv()
 	p.logger.SetLevel(hclog.Level(configuration.GetEnvInt(configuration.EnvLogLevel, int(hclog.Debug))))
 
@@ -55,12 +56,12 @@ func (p *MovingAveragePlugin) SetEnvironment(debugMode bool) {
 }
 
 // GetName returns the unique name for this plugin.
-func (p *MovingAveragePlugin) GetName() string {
-	return "MovingAveragePlugin"
+func (p *MovAvgPlugin) GetName() string {
+	return "MovAvgPlugin"
 }
 
 // GetSubscribedMetrics returns the list of metrics this plugin subscribes to.
-func (p *MovingAveragePlugin) GetSubscribedMetrics() []string {
+func (p *MovAvgPlugin) GetSubscribedMetrics() []string {
 	return []string{
 		"NWDAF_cpu_usage_percent",
 		"NWDAF_memory_usage_bytes",
@@ -68,12 +69,12 @@ func (p *MovingAveragePlugin) GetSubscribedMetrics() []string {
 }
 
 // GetMinimumSamples returns the minimum number of samples required.
-func (p *MovingAveragePlugin) GetMinimumSamples() int {
+func (p *MovAvgPlugin) GetMinimumSamples() int {
 	return p.minimumSamples
 }
 
 // ProcessMetric accumulates metrics in the buffer and returns true when ready to execute.
-func (p *MovingAveragePlugin) ProcessMetric(metric models.Metric) bool {
+func (p *MovAvgPlugin) ProcessMetric(metric models.Metric) bool {
 	p.logger.Debug("Processing metric", "name", metric.Name, "value", metric.Value)
 
 	// Add metric to buffer
@@ -96,11 +97,13 @@ func (p *MovingAveragePlugin) ProcessMetric(metric models.Metric) bool {
 }
 
 // Execute computes the moving average and returns computed metrics.
-func (p *MovingAveragePlugin) Execute() []models.Metric {
+func (p *MovAvgPlugin) Execute() map[string][]models.Metric {
 	p.logger.Debug("Executing moving average algorithm", "bufferSize", len(p.metricBuffer))
 
+	result := make(map[string][]models.Metric)
+
 	if len(p.metricBuffer) == 0 {
-		return []models.Metric{}
+		return result
 	}
 
 	// Group metrics by name
@@ -110,8 +113,6 @@ func (p *MovingAveragePlugin) Execute() []models.Metric {
 	}
 
 	// Compute moving average for each metric type
-	computedMetrics := make([]models.Metric, 0)
-
 	for metricName, metrics := range metricsByName {
 		if len(metrics) < p.minimumSamples {
 			continue
@@ -141,18 +142,20 @@ func (p *MovingAveragePlugin) Execute() []models.Metric {
 			NFType:      metrics[0].NFType,
 		}
 
-		computedMetrics = append(computedMetrics, computedMetric)
+		outputMetricName := fmt.Sprintf("%s_moving_avg", metricName)
+		result[outputMetricName] = []models.Metric{computedMetric}
+
 		p.logger.Info("Computed moving average",
 			"metric", metricName,
 			"average", average,
 			"samples", count)
 	}
 
-	return computedMetrics
+	return result
 }
 
 // GetRequiredEnvVars returns the list of required environment variables.
-func (p *MovingAveragePlugin) GetRequiredEnvVars() []string {
+func (p *MovAvgPlugin) GetRequiredEnvVars() []string {
 	// No special environment variables required for this dummy plugin
 	return []string{}
 }
@@ -184,8 +187,12 @@ func main() {
 		for _, metric := range testMetrics {
 			shouldExecute := MovingAverageAlgorithm.ProcessMetric(metric)
 			if shouldExecute {
-				computed := MovingAverageAlgorithm.Execute()
-				MovingAverageAlgorithm.logger.Info("Computed metrics", "count", len(computed), "metrics", computed)
+				computedMap := MovingAverageAlgorithm.Execute()
+				totalCount := 0
+				for _, metricList := range computedMap {
+					totalCount += len(metricList)
+				}
+				MovingAverageAlgorithm.logger.Info("Computed metrics", "count", totalCount, "metrics", computedMap)
 			}
 		}
 	} else {

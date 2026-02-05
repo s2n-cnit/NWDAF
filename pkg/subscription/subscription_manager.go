@@ -2,18 +2,19 @@ package subscription
 
 import (
 	"errors"
+
 	"github.com/s2n-cnit/nwdaf/pkg/database"
 	"github.com/s2n-cnit/nwdaf/pkg/models"
 	"github.com/sirupsen/logrus"
 )
 
-var SubscriptionMapByNFid = make(map[string][]models.Subscription)  // Used to optimize retrieval when need all sub by a NF
-var SubscriptionMapByEvent = make(map[string][]models.Subscription) // Used to optimize retrieval when an event occur, and we need all subscriptions to that event
-var SubscriptionMapByNotifCorrId = make(map[string]models.Subscription)
+var SubMapByNFid = make(map[string][]models.Subscription)  // Used to optimize retrieval when need all sub by a NF
+var SubMapByEvent = make(map[string][]models.Subscription) // Used to optimize retrieval when an event occur, and we need all subscriptions to that event
+var SubMapByNotifCorrId = make(map[string]models.Subscription)
 
 func GetSubscriptions() []models.Subscription {
 	var subList []models.Subscription
-	for _, subscription := range SubscriptionMapByNotifCorrId {
+	for _, subscription := range SubMapByNotifCorrId {
 		subList = append(subList, subscription)
 	}
 	if subList == nil {
@@ -23,7 +24,7 @@ func GetSubscriptions() []models.Subscription {
 }
 
 func GetSubscriptionByNotifCorrId(key string) *models.Subscription {
-	subscription, exists := SubscriptionMapByNotifCorrId[key]
+	subscription, exists := SubMapByNotifCorrId[key]
 	if !exists {
 		return nil
 	}
@@ -31,7 +32,7 @@ func GetSubscriptionByNotifCorrId(key string) *models.Subscription {
 }
 
 func GetSubscriptionByNFid(nfID string) *[]models.Subscription {
-	subscription, exists := SubscriptionMapByNFid[nfID]
+	subscription, exists := SubMapByNFid[nfID]
 	if !exists {
 		return &[]models.Subscription{}
 	}
@@ -39,7 +40,7 @@ func GetSubscriptionByNFid(nfID string) *[]models.Subscription {
 }
 
 func GetSubscriptionsByEvent(key string) *[]models.Subscription {
-	subscriptionList, exists := SubscriptionMapByEvent[key]
+	subscriptionList, exists := SubMapByEvent[key]
 	if !exists {
 		return &[]models.Subscription{}
 	}
@@ -74,13 +75,13 @@ func AddSubscription(subscription models.Subscription, saveInDB bool) (*models.S
 
 func insertSubscription(subscription models.Subscription) {
 	// ------------ INSERTING by NF ID
-	SubscriptionMapByNFid[subscription.GetNFid()] = append(SubscriptionMapByNFid[subscription.GetNFid()], subscription)
+	SubMapByNFid[subscription.GetNFid()] = append(SubMapByNFid[subscription.GetNFid()], subscription)
 	// ------------ INSERTING by EVENT TYPE
 	for _, eventSubscription := range subscription.GetEvents() {
-		SubscriptionMapByEvent[eventSubscription.Event] = append(SubscriptionMapByEvent[eventSubscription.Event], subscription)
+		SubMapByEvent[eventSubscription.Event] = append(SubMapByEvent[eventSubscription.Event], subscription)
 	}
 	// ------------ INSERTING by NOTIFY CORR ID
-	SubscriptionMapByNotifCorrId[subscription.GetNotifCorrId()] = subscription
+	SubMapByNotifCorrId[subscription.GetNotifCorrId()] = subscription
 }
 
 func LoadSubscriptionsFromDB() {
@@ -92,7 +93,7 @@ func LoadSubscriptionsFromDB() {
 
 func UpdateSubscriptionNotifCorrId(notifCorrId string, subscription models.Subscription) *models.Subscription {
 	if GetSubscriptionByNotifCorrId(notifCorrId) == nil {
-		SubscriptionMapByNotifCorrId[notifCorrId] = subscription
+		SubMapByNotifCorrId[notifCorrId] = subscription
 		return &subscription
 	}
 	return nil
@@ -100,11 +101,11 @@ func UpdateSubscriptionNotifCorrId(notifCorrId string, subscription models.Subsc
 
 func DeleteSubscriptionNotifCorrId(notifCorrId string) (*models.Subscription, error) {
 	if !(GetSubscriptionByNotifCorrId(notifCorrId) == nil) {
-		subscription := SubscriptionMapByNotifCorrId[notifCorrId]
-		delete(SubscriptionMapByNotifCorrId, notifCorrId)
-		delete(SubscriptionMapByNFid, subscription.GetNFid())
+		subscription := SubMapByNotifCorrId[notifCorrId]
+		delete(SubMapByNotifCorrId, notifCorrId)
+		delete(SubMapByNFid, subscription.GetNFid())
 		for _, eventType := range subscription.GetEvents() {
-			delete(SubscriptionMapByEvent, eventType.Event)
+			delete(SubMapByEvent, eventType.Event)
 		}
 		deletedSub := database.DeleteMongoDBSubscriptionNotifCorrId(notifCorrId)
 		if deletedSub == nil {

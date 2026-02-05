@@ -2,15 +2,16 @@ package main
 
 import (
 	"encoding/json"
+	"net/http"
+	"os"
+	"strings"
+
 	freemodels "github.com/free5gc/openapi/models"
 	"github.com/hashicorp/go-hclog"
 	"github.com/hashicorp/go-plugin"
 	"github.com/s2n-cnit/nwdaf/pkg/configuration"
 	"github.com/s2n-cnit/nwdaf/pkg/models"
 	"github.com/s2n-cnit/nwdaf/plugin/plugin_shared"
-	"net/http"
-	"os"
-	"strings"
 )
 
 // F5GAmfCollector is a collector for Free5GC AMF metrics.

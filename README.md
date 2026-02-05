@@ -455,6 +455,8 @@ NWDAF_cpu_usage_percent{app="nwdaf"} 45.8
 
 ## Plugin Development
 
+**Note:** Plugins with the `FAKE_` prefix are used for testing purposes only and do not interact with real 5G cores. These plugins generate synthetic data and are useful for development and testing without requiring actual network functions.
+
 ### Data Collector Plugin
 
 Create a new collector plugin to gather metrics from a specific NF or vendor.

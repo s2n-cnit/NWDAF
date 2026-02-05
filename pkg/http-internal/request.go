@@ -4,9 +4,10 @@ import (
 	"bytes"
 	"crypto/tls"
 	"encoding/json"
-	"github.com/hashicorp/go-hclog"
 	"net/http"
 	"os"
+
+	"github.com/hashicorp/go-hclog"
 )
 
 var logger = hclog.New(&hclog.LoggerOptions{

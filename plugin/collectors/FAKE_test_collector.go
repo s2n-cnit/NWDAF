@@ -174,6 +174,10 @@ func (collector *FakeCollector) Collect() []models.Metric {
 		},
 	}
 
+	for metric := range metrics {
+		metrics[metric].ReceivedAt = time.Now()
+	}
+
 	collector.logger.Debug("Generated fake metrics", "count", len(metrics))
 	return metrics
 }

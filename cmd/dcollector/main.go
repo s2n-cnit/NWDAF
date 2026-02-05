@@ -5,6 +5,12 @@ package main
 import (
 	"encoding/json"
 	"fmt"
+	"log"
+	"os"
+	"os/exec"
+	"strings"
+	"time"
+
 	"github.com/hashicorp/go-hclog"
 	"github.com/hashicorp/go-plugin"
 	"github.com/s2n-cnit/nwdaf/pkg/configuration"
@@ -12,11 +18,6 @@ import (
 	"github.com/s2n-cnit/nwdaf/pkg/redis_custom"
 	"github.com/s2n-cnit/nwdaf/pkg/utils"
 	shared2 "github.com/s2n-cnit/nwdaf/plugin/plugin_shared"
-	"log"
-	"os"
-	"os/exec"
-	"strings"
-	"time"
 )
 
 const PluginFolder = "plugin/collectors/build/"

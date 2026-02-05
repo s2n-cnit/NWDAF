@@ -5,6 +5,8 @@ data from multiple type of cores.
 There is a common interface that all plugins must implement to be used by the data collector.
 Plugins interact with the cores using RPC calls.
 
+**Note:** Plugins with the `FAKE_` prefix are used for testing purposes only and do not interact with real 5G cores.
+
 Plugins are grouped by the **type** of core they are interacting with. This is important because it does affect the way 
 the plugin is configured by env variables.
 

@@ -1,6 +1,6 @@
 module github.com/s2n-cnit/nwdaf
 
-go 1.23
+go 1.24.3
 
 require (
 	github.com/free5gc/openapi v1.0.8
@@ -11,6 +11,7 @@ require (
 	github.com/hashicorp/go-plugin v1.6.2
 	github.com/joho/godotenv v1.5.1
 	github.com/prometheus/client_golang v1.20.5
+	github.com/sartorproj/goarima v0.3.0
 	github.com/sirupsen/logrus v1.9.3
 	go.mongodb.org/mongo-driver v1.17.1
 	gopkg.in/yaml.v3 v3.0.1

@@ -7,20 +7,21 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net/http"
+
 	"github.com/free5gc/openapi/models"
 	"github.com/google/uuid"
 	"github.com/hashicorp/go-hclog"
-	"net/http"
 )
 
-// NRFClient represents a client for interacting with the Network Repository Function (NRF).
-type NRFClient struct {
+// ClientNRF represents a client for interacting with the Network Repository Function (NRF).
+type ClientNRF struct {
 	NRFIp  string       // IP address of the NRF
 	Logger hclog.Logger // Logger for logging messages
 }
 
-// NRFResponse represents the response from the NRF.
-type NRFResponse struct {
+// ResponseNRF represents the response from the NRF.
+type ResponseNRF struct {
 	validityPeriod int                // Validity period of the response
 	nfInstances    []models.NfProfile // List of NF profiles
 }
@@ -32,7 +33,7 @@ type NRFResponse struct {
 // - address: IP address of the NF instance
 //
 // Returns an error if the registration fails.
-func (nrfClient *NRFClient) RegisterToNRF(nfInstanceID uuid.UUID, address models.IpAddress) error {
+func (nrfClient *ClientNRF) RegisterToNRF(nfInstanceID uuid.UUID, address models.IpAddress) error {
 	profile := models.NfProfile{
 		NfInstanceId:  nfInstanceID.String(),
 		NfType:        "NWDAF",
@@ -64,7 +65,7 @@ func (nrfClient *NRFClient) RegisterToNRF(nfInstanceID uuid.UUID, address models
 
 	if resp.StatusCode != http.StatusCreated {
 		nrfClient.Logger.Error("Unexpected status code:", resp.StatusCode)
-		return errors.New("Unexpected status code")
+		return errors.New("unexpected status code")
 	}
 
 	nrfClient.Logger.Info("Successfully registered to NRF")
@@ -77,7 +78,7 @@ func (nrfClient *NRFClient) RegisterToNRF(nfInstanceID uuid.UUID, address models
 // - nfInstanceID: UUID of the NF instance
 //
 // Returns an error if the deregistration fails.
-func (nrfClient *NRFClient) DeregisterFromNRF(nfInstanceID uuid.UUID) error {
+func (nrfClient *ClientNRF) DeregisterFromNRF(nfInstanceID uuid.UUID) error {
 	uri := fmt.Sprintf("http://%v/nnrf-nfm/v1/nf-instances/%v", nrfClient.NRFIp, nfInstanceID.String())
 	req, err := http.NewRequest(http.MethodDelete, uri, nil)
 	if err != nil {
@@ -108,7 +109,7 @@ func (nrfClient *NRFClient) DeregisterFromNRF(nfInstanceID uuid.UUID) error {
 // - nfType: Type of the NF instances to retrieve
 //
 // Returns a slice of NF profiles and an error if the retrieval fails.
-func (nrfClient *NRFClient) GetNFInstances(nfType models.NfType) ([]models.NfProfile, error) {
+func (nrfClient *ClientNRF) GetNFInstances(nfType models.NfType) ([]models.NfProfile, error) {
 	if nfType == "" {
 		return nil, errors.New("nfType is empty")
 	}
@@ -121,9 +122,9 @@ func (nrfClient *NRFClient) GetNFInstances(nfType models.NfType) ([]models.NfPro
 
 	nrfClient.Logger.Trace("Response body:", resp.Body)
 
-	var result NRFResponse
-	err_dec := json.NewDecoder(resp.Body).Decode(&result)
-	if err_dec != nil {
+	var result ResponseNRF
+	errDec := json.NewDecoder(resp.Body).Decode(&result)
+	if errDec != nil {
 		nrfClient.Logger.Error("Error decoding JSON response:", err)
 	}
 

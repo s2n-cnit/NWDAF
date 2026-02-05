@@ -1,11 +1,12 @@
 package configuration
 
 import (
+	"os"
+	"strconv"
+
 	"github.com/hashicorp/go-hclog"
 	"github.com/joho/godotenv"
 	"github.com/s2n-cnit/nwdaf/plugin/plugin_shared"
-	"os"
-	"strconv"
 )
 
 const EnvRedisUri = "REDIS_URI"
@@ -15,6 +16,8 @@ const EnvPrometheusLocalPort = "PROMETHEUS_LOCAL_PORT"
 const EnvLogLevel = "LOG_LEVEL"
 const EnvMetricPrefix = "METRIC_PREFIX"
 const EnvDArchiverAPIPort = "DARCHIVER_API_PORT"
+const EnvAnalyticsEngineAPIPort = "ANALYTICS_ENGINE_API_PORT"
+const EnvMetricExpirationSeconds = "METRIC_EXPIRATION_SECONDS"
 
 var logger = hclog.New(&hclog.LoggerOptions{Name: "Environ", Output: os.Stdout, Level: hclog.Debug})
 
@@ -104,7 +107,8 @@ func GetEnvInt(key string, defaultValue int) int {
 func GetEnvIntNoDefault(key string) *int {
 	value, exists := os.LookupEnv(key)
 	if !exists {
-		logger.Warn("Trying to load an environment variable that has not been set ", key)
+		// Note: Warning commented out to avoid interfering with plugin handshake
+		// logger.Warn("Trying to load an environment variable that has not been set ", key)
 		return nil
 	}
 	valueInt, err := strconv.Atoi(value)

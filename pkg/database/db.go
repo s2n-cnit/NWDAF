@@ -2,6 +2,7 @@ package database
 
 import (
 	"context"
+
 	"github.com/sirupsen/logrus"
 	"go.mongodb.org/mongo-driver/mongo"
 	"go.mongodb.org/mongo-driver/mongo/options"
@@ -15,7 +16,7 @@ const (
 var client *mongo.Client
 var collection *mongo.Collection
 
-// Initialize MongoDB client
+// InitMongoDB Initialize MongoDB client
 func InitMongoDB(mongoURI string, username string, password string, collectionName string) {
 	var err error
 	clientOptions := options.Client().ApplyURI(mongoURI)
@@ -42,7 +43,7 @@ func InitMongoDB(mongoURI string, username string, password string, collectionNa
 	logrus.Debug("Connected to MongoDB!")
 }
 
-// Close the MongoDB client connection
+// CloseMongoDB Close the MongoDB client connection
 func CloseMongoDB() {
 	if err := client.Disconnect(context.TODO()); err != nil {
 		logrus.Fatal(err)

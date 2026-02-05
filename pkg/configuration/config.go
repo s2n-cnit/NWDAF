@@ -3,11 +3,12 @@ package configuration
 // Description: This file contains the configuration structure and the function to load the configuration from a file.
 
 import (
+	"os"
+
 	"github.com/hashicorp/go-hclog"
 	"github.com/s2n-cnit/nwdaf/pkg/utils"
 	"github.com/s2n-cnit/nwdaf/plugin/plugin_shared"
 	"gopkg.in/yaml.v3"
-	"os"
 )
 
 const (

@@ -1,0 +1,332 @@
+body {
+    display: flex;
+    min-height: 100vh;
+    flex-direction: column;
+    background-color: #f5f5f5;
+}
+
+main {
+    flex: 1 0 auto;
+}
+
+.container {
+    margin-bottom: 40px;
+}
+
+.brand-logo {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+.brand-logo i {
+    font-size: 2rem;
+}
+
+#statusBar {
+    margin: 0;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 10px 20px;
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    color: white;
+    border-radius: 4px;
+}
+
+#statusText {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+#statusText i {
+    vertical-align: middle;
+}
+
+.status-connected {
+    color: #4caf50 !important;
+}
+
+.status-disconnected {
+    color: #f44336 !important;
+}
+
+.status-loading {
+    color: #ff9800 !important;
+    animation: pulse 1.5s ease-in-out infinite;
+}
+
+@keyframes pulse {
+    0%, 100% {
+        opacity: 1;
+    }
+    50% {
+        opacity: 0.5;
+    }
+}
+
+.card {
+    border-radius: 8px;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+    margin-top: 20px;
+}
+
+.card-title {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    font-weight: 500;
+    color: #1976d2;
+}
+
+.tabs {
+    background-color: white;
+    border-radius: 8px;
+    overflow: hidden;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+}
+
+.tabs .tab a {
+    color: #1976d2;
+}
+
+.tabs .tab a:hover,
+.tabs .tab a.active {
+    color: #1976d2;
+    background-color: rgba(25, 118, 210, 0.1);
+}
+
+.tabs .indicator {
+    background-color: #1976d2;
+}
+
+canvas {
+    max-height: 400px;
+}
+
+table.striped tbody tr:nth-child(odd) {
+    background-color: rgba(242, 242, 242, 0.5);
+}
+
+table thead {
+    background-color: #1976d2;
+    color: white;
+}
+
+table thead th {
+    font-weight: 500;
+}
+
+/* Table container for responsive overflow */
+.table-container {
+    overflow-x: auto;
+    max-width: 100%;
+    -webkit-overflow-scrolling: touch;
+    position: relative;
+    margin-top: 10px;
+}
+
+/* Scroll shadow effect */
+.table-container::-webkit-scrollbar {
+    height: 8px;
+}
+
+.table-container::-webkit-scrollbar-track {
+    background: #f1f1f1;
+    border-radius: 4px;
+}
+
+.table-container::-webkit-scrollbar-thumb {
+    background: #1976d2;
+    border-radius: 4px;
+}
+
+.table-container::-webkit-scrollbar-thumb:hover {
+    background: #1565c0;
+}
+
+/* Make table fit within container */
+.table-container table {
+    margin: 0;
+    width: 100%;
+    table-layout: auto;
+}
+
+/* Constrain table columns */
+.table-container table th,
+.table-container table td {
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    max-width: 200px;
+}
+
+/* First column (Name) can be wider */
+.table-container table th:first-child,
+.table-container table td:first-child {
+    max-width: 250px;
+}
+
+/* Value column narrower */
+.table-container table th:nth-child(2),
+.table-container table td:nth-child(2) {
+    max-width: 100px;
+    text-align: right;
+}
+
+/* NF Type column */
+.table-container table th:nth-child(3),
+.table-container table td:nth-child(3) {
+    max-width: 100px;
+}
+
+/* Time column */
+.table-container table th:nth-child(4),
+.table-container table td:nth-child(4) {
+    max-width: 150px;
+    font-size: 0.9rem;
+}
+
+.collection .collection-item {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.collection .collection-item .badge {
+    background-color: #1976d2;
+    color: white;
+    font-weight: 500;
+    padding: 4px 12px;
+    border-radius: 12px;
+}
+
+.dropdown-content {
+    min-width: 200px;
+}
+
+.dropdown-content li > a {
+    color: #1976d2;
+}
+
+/* Chart container styling */
+#metricsChartContainer,
+#computedChartContainer {
+    position: relative;
+    height: 400px;
+    margin: 20px 0;
+}
+
+/* Empty state styling */
+.center-align i.large {
+    font-size: 4rem;
+}
+
+/* Loading animation */
+.progress {
+    background-color: rgba(25, 118, 210, 0.2);
+}
+
+.progress .indeterminate {
+    background-color: #1976d2;
+}
+
+/* Metric cards */
+.metric-card {
+    padding: 20px;
+    border-left: 4px solid #1976d2;
+    background: white;
+    border-radius: 4px;
+    margin-bottom: 10px;
+    transition: transform 0.2s, box-shadow 0.2s;
+}
+
+.metric-card:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+}
+
+.metric-card .metric-name {
+    font-weight: 500;
+    color: #333;
+    font-size: 1.1rem;
+}
+
+.metric-card .metric-value {
+    font-size: 2rem;
+    font-weight: 300;
+    color: #1976d2;
+    margin: 10px 0;
+}
+
+.metric-card .metric-meta {
+    color: #666;
+    font-size: 0.9rem;
+}
+
+/* Responsive adjustments */
+@media only screen and (max-width: 600px) {
+    .brand-logo {
+        font-size: 1.2rem;
+    }
+
+    .brand-logo i {
+        font-size: 1.5rem;
+    }
+
+    #statusBar {
+        flex-direction: column;
+        gap: 10px;
+        text-align: center;
+    }
+
+    canvas {
+        max-height: 300px;
+    }
+
+    /* Make tables more compact on mobile */
+    .table-container table th,
+    .table-container table td {
+        font-size: 0.85rem;
+        padding: 8px 5px;
+        max-width: 150px;
+    }
+
+    .table-container table th:nth-child(4),
+    .table-container table td:nth-child(4) {
+        font-size: 0.75rem;
+        max-width: 120px;
+    }
+}
+
+/* Tooltip styling */
+.material-tooltip {
+    background-color: #1976d2;
+    font-size: 0.9rem;
+    padding: 8px 12px;
+}
+
+/* Page footer */
+.page-footer {
+    margin-top: 40px;
+}
+
+/* Smooth transitions */
+.card,
+.collection .collection-item,
+.tabs .tab a {
+    transition: all 0.3s ease;
+}
+
+/* No data state */
+.no-data-message {
+    text-align: center;
+    padding: 40px;
+    color: #9e9e9e;
+}
+
+.no-data-message i {
+    font-size: 4rem;
+    margin-bottom: 20px;
+}

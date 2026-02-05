@@ -1,0 +1,52 @@
+NWDAF Web Dashboard - Third-Party Software Notices
+
+This file contains notices for third-party software included in the NWDAF Web Dashboard.
+
+================================================================================
+
+1. Chart.js (v4.4.1)
+   https://www.chartjs.org/
+   Copyright (c) 2014-2024 Chart.js Contributors
+   License: MIT License
+   License File: web/libs/LICENSES/Chart.js-LICENSE.txt
+
+================================================================================
+
+2. chartjs-adapter-date-fns (v3.0.0)
+   https://github.com/chartjs/chartjs-adapter-date-fns
+   Copyright (c) 2021 Chart.js Contributors
+   License: MIT License
+   License File: web/libs/LICENSES/chartjs-adapter-date-fns-LICENSE.txt
+
+================================================================================
+
+3. Materialize CSS (v1.0.0)
+   https://materializecss.com/
+   Copyright (c) 2014-2020 Materialize
+   License: MIT License
+   License File: web/libs/LICENSES/Materialize-LICENSE.txt
+
+================================================================================
+
+4. Material Icons
+   https://fonts.google.com/icons
+   Copyright 2015 Google LLC
+   License: Apache License 2.0
+   License File: web/libs/LICENSES/Material-Icons-LICENSE.txt
+
+================================================================================
+
+5. Roboto Font
+   https://fonts.google.com/specimen/Roboto
+   Copyright 2011 Google Inc. All Rights Reserved.
+   License: Apache License 2.0
+   License File: web/libs/LICENSES/Roboto-Font-LICENSE.txt
+
+================================================================================
+
+For full license texts, see the individual license files in web/libs/LICENSES/
+
+All libraries are used under their respective permissive open-source licenses
+which allow distribution, modification, and commercial use with proper attribution.
+
+Last Updated: February 5, 2026

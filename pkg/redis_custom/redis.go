@@ -3,11 +3,12 @@ package redis_custom
 import (
 	"context"
 	"encoding/json"
+	"os"
+	"strings"
+
 	"github.com/go-redis/redis/v8"
 	"github.com/hashicorp/go-hclog"
 	"github.com/s2n-cnit/nwdaf/pkg/models"
-	"os"
-	"strings"
 )
 
 func NewCustomClient(clientName string, loggingLevel hclog.Level, redisUri string, redisPwd *string, moduleInfo *models.Module) RedisClient {
@@ -91,7 +92,7 @@ func (client RedisClient) Publish(topic string, message string) {
 	}
 }
 
-// pubsub := *redisClient.Client.Subscribe(Ctx, "metrics", "computedMetrics")
+// Subscribe pubsub := *redisClient.Client.Subscribe(Ctx, "metrics", "computedMetrics")
 func (client RedisClient) Subscribe(topics ...string) *redis.PubSub {
 	pubsub := client.Client.Subscribe(client.Ctx, topics...)
 	return pubsub

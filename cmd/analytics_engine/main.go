@@ -1,11 +1,28 @@
 // Package main implements the Analytics Engine for NWDAF.
-// The Analytics Engine loads analytics plugins, subscribes to Redis metrics,
-// and publishes computed metrics back to Redis.
+//
+// The Analytics Engine is responsible for:
+//   - Loading analytics plugins compatible with the core type
+//   - Subscribing to Redis metrics and computedMetrics topics
+//   - Processing incoming metrics with registered plugins
+//   - Storing computed metrics in memory with automatic expiration
+//   - Publishing computed metrics back to Redis
+//   - Exposing HTTP REST API endpoints for retrieving stored computed metrics
+//
+// Environment variables:
+//   - ANALYTICS_ENGINE_API_PORT: Port for the HTTP API server (default: 8084)
+//   - METRIC_EXPIRATION_SECONDS: Time in seconds before computed metrics expire (default: 300)
 package main
 
 import (
 	"encoding/json"
 	"fmt"
+	"log"
+	"net/http"
+	"os"
+	"os/exec"
+	"strings"
+	"time"
+
 	"github.com/hashicorp/go-hclog"
 	"github.com/hashicorp/go-plugin"
 	"github.com/s2n-cnit/nwdaf/pkg/configuration"
@@ -13,11 +30,6 @@ import (
 	"github.com/s2n-cnit/nwdaf/pkg/redis_custom"
 	"github.com/s2n-cnit/nwdaf/pkg/utils"
 	shared2 "github.com/s2n-cnit/nwdaf/plugin/plugin_shared"
-	"log"
-	"os"
-	"os/exec"
-	"strings"
-	"time"
 )
 
 const PluginFolder = "plugin/analytics/build/"
@@ -44,14 +56,23 @@ var (
 	coreType      *string
 )
 
-// AnalyticsPluginWrapper wraps an analytics plugin with metadata.
+// ComputedMetricBuffer stores all computed metrics from a single plugin execution.
+type ComputedMetricBuffer struct {
+	MetricsByName  map[string][]models.Metric
+	LastUpdateTime time.Time
+}
+
+// AnalyticsPluginWrapper wraps an analytics plugin with metadata and stores computed metrics.
+// The wrapper maintains a buffer of computed metrics that are automatically cleaned up
+// after they expire (based on METRIC_EXPIRATION_SECONDS environment variable).
 type AnalyticsPluginWrapper struct {
-	Plugin            shared2.AnalyticsAlgorithm
-	SubscribedMetrics map[string]bool // Map for fast lookup
-	MinimumSamples    int
-	Name              string
-	LastExecutionTime time.Time
-	ExecutionCount    int64
+	Plugin            shared2.AnalyticsAlgorithm // The analytics plugin implementation
+	SubscribedMetrics map[string]bool            // Map for fast lookup of subscribed metrics
+	MinimumSamples    int                        // Minimum samples required before execution
+	Name              string                     // Plugin name
+	LastExecutionTime time.Time                  // Last time the plugin executed
+	ExecutionCount    int64                      // Total number of executions
+	ComputedMetrics   *ComputedMetricBuffer      // Stores all computed metrics from last execution
 }
 
 func SetEnvironment() {
@@ -72,6 +93,9 @@ func SetEnvironment() {
 	configuration.SetEnv(shared2.EnvMagicCookieKeyValue, handshakeConfig.MagicCookieValue)
 }
 
+// Start initializes and runs the Analytics Engine.
+// It loads plugins, starts the HTTP API server, subscribes to Redis topics,
+// and processes incoming metrics.
 func Start() {
 	SetEnvironment()
 	initializeRedis()
@@ -85,7 +109,7 @@ func Start() {
 	for _, fileOrFolder := range files {
 		if !fileOrFolder.IsDir() {
 			file := fileOrFolder
-			// If the plugin name is starting with the core type, load it.
+			// If the plugin name starts with the core type, load it.
 			if strings.HasPrefix(file.Name(), *coreType) {
 				client := LoadPlugin(fileOrFolder)
 				defer func() {
@@ -101,6 +125,9 @@ func Start() {
 	} else {
 		logger.Info("Loaded analytics plugins", "count", len(pluginList))
 	}
+
+	// Start HTTP API server for retrieving stored computed metrics
+	go startHTTPServer()
 
 	// Subscribe to metrics and computedMetrics topics
 	pubsub := *redisClient.Subscribe("metrics", "computedMetrics")
@@ -125,7 +152,8 @@ func Start() {
 			continue
 		}
 
-		// Process the metric with each plugin that subscribes to it
+		// Process the metric with each plugin that subscribes to it.
+		// This will also store computed metrics and clean up expired ones.
 		ProcessMetricWithPlugins(metric)
 	}
 }
@@ -146,7 +174,9 @@ func LoadPlugin(file os.DirEntry) *plugin.Client {
 	// Start the RPC client for the plugin.
 	rpcClient, err := client.Client()
 	if err != nil {
-		logger.Error("Error starting RPC for", "plugin", client, "error", err)
+		logger.Error("Error starting RPC for plugin", "plugin", file.Name(), "error", err)
+		client.Kill()
+		return client
 	}
 	rpcClientList = append(rpcClientList, &rpcClient)
 
@@ -154,12 +184,14 @@ func LoadPlugin(file os.DirEntry) *plugin.Client {
 	LoadedPlugin, err := rpcClient.Dispense(file.Name())
 	if err != nil {
 		logger.Error("Error loading remote plugin", "plugin", file.Name(), "error", err)
+		client.Kill()
 		return client
 	}
 
 	// Check if LoadedPlugin is nil
 	if LoadedPlugin == nil {
 		logger.Error("Plugin dispense returned nil", "plugin", file.Name())
+		client.Kill()
 		return client
 	}
 
@@ -190,6 +222,7 @@ func LoadPlugin(file os.DirEntry) *plugin.Client {
 			Name:              analyticsPlugin.GetName(),
 			LastExecutionTime: time.Now(),
 			ExecutionCount:    0,
+			ComputedMetrics:   nil,
 		}
 		pluginList = append(pluginList, wrapper)
 
@@ -203,9 +236,15 @@ func LoadPlugin(file os.DirEntry) *plugin.Client {
 }
 
 // ProcessMetricWithPlugins processes a metric with all plugins that subscribe to it.
+// It also stores computed metrics in the plugin wrapper and cleans up expired metrics.
 func ProcessMetricWithPlugins(metric models.Metric) {
+	expirationDuration := time.Duration(configuration.GetEnvInt(configuration.EnvMetricExpirationSeconds, 300)) * time.Second
+
 	for i := range pluginList {
 		wrapper := &pluginList[i]
+
+		// Clean up expired computed metrics
+		cleanupExpiredMetrics(wrapper, expirationDuration)
 
 		// Check if this plugin subscribes to this metric
 		if !wrapper.SubscribedMetrics[metric.Name] {
@@ -223,17 +262,58 @@ func ProcessMetricWithPlugins(metric models.Metric) {
 			logger.Debug("Executing analytics algorithm", "plugin", wrapper.Name)
 
 			// Execute the algorithm
-			computedMetrics := wrapper.Plugin.Execute()
+			computedMetricsMap := wrapper.Plugin.Execute()
+			logger.Trace("Analytics algorithm returned metrics", "plugin", wrapper.Name, "metrics", computedMetricsMap)
 
 			// Update wrapper metadata
 			wrapper.LastExecutionTime = time.Now()
 			wrapper.ExecutionCount++
 
-			// Publish computed metrics to Redis
-			if len(computedMetrics) > 0 {
-				PublishComputedMetrics(computedMetrics, wrapper.Name)
+			// Store full metric lists by name, but publish only the first element of each list.
+			storedMetrics := make(map[string][]models.Metric)
+			publishedMetrics := make([]models.Metric, 0)
+			for metricName, metricList := range computedMetricsMap {
+				if len(metricList) > 0 {
+					storedMetrics[metricName] = metricList
+					publishedMetrics = append(publishedMetrics, metricList[0])
+				}
+			}
+
+			// Store computed metrics in wrapper (replace existing)
+			if len(storedMetrics) > 0 {
+				storeComputedMetrics(wrapper, storedMetrics)
+				PublishComputedMetrics(publishedMetrics, wrapper.Name)
+			} else {
+				logger.Warn("Analytics algorithm returned no metrics", "plugin", wrapper.Name)
 			}
 		}
+	}
+}
+
+// storeComputedMetrics stores all computed metrics from a plugin execution, replacing the previous execution's metrics.
+func storeComputedMetrics(wrapper *AnalyticsPluginWrapper, metricsByName map[string][]models.Metric) {
+	now := time.Now()
+	wrapper.ComputedMetrics = &ComputedMetricBuffer{
+		MetricsByName:  metricsByName,
+		LastUpdateTime: now,
+	}
+	totalCount := 0
+	for _, metricList := range metricsByName {
+		totalCount += len(metricList)
+	}
+	logger.Debug("Stored computed metrics", "plugin", wrapper.Name, "count", totalCount)
+}
+
+// cleanupExpiredMetrics removes computed metrics that haven't been updated within the expiration duration.
+func cleanupExpiredMetrics(wrapper *AnalyticsPluginWrapper, expirationDuration time.Duration) {
+	if wrapper.ComputedMetrics == nil {
+		return
+	}
+
+	now := time.Now()
+	if now.Sub(wrapper.ComputedMetrics.LastUpdateTime) > expirationDuration {
+		wrapper.ComputedMetrics = nil
+		logger.Debug("Removed expired computed metrics", "plugin", wrapper.Name)
 	}
 }
 
@@ -261,6 +341,97 @@ func PublishComputedMetrics(metrics []models.Metric, pluginName string) {
 			// Publish the serialized metric to the "computedMetrics" topic.
 			redisClient.Publish("computedMetrics", string(jsonData))
 		}
+	}
+}
+
+// ComputedMetricResponse represents the API response for computed metrics from a plugin.
+type ComputedMetricResponse struct {
+	PluginName     string                     `json:"pluginName"`
+	MetricsByName  map[string][]models.Metric `json:"metricsByName"`
+	LastUpdateTime time.Time                  `json:"lastUpdateTime"`
+}
+
+// startHTTPServer starts the HTTP API server for retrieving stored computed metrics.
+func startHTTPServer() {
+	port := configuration.GetEnvInt(configuration.EnvAnalyticsEngineAPIPort, 8084)
+
+	http.HandleFunc("/api/computed-metrics", handleGetAllComputedMetrics)
+	http.HandleFunc("/api/computed-metrics/", handleGetComputedMetricByName)
+
+	addr := fmt.Sprintf(":%d", port)
+	logger.Info("Starting Analytics Engine HTTP API server", "port", port)
+
+	if err := http.ListenAndServe(addr, nil); err != nil {
+		logger.Error("Failed to start HTTP API server", "error", err)
+	}
+}
+
+// handleGetAllComputedMetrics returns all stored computed metrics from all plugins.
+func handleGetAllComputedMetrics(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	var response []ComputedMetricResponse
+
+	for _, wrapper := range pluginList {
+		if wrapper.ComputedMetrics != nil {
+			response = append(response, ComputedMetricResponse{
+				PluginName:     wrapper.Name,
+				MetricsByName:  wrapper.ComputedMetrics.MetricsByName,
+				LastUpdateTime: wrapper.ComputedMetrics.LastUpdateTime,
+			})
+		}
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	if err := json.NewEncoder(w).Encode(response); err != nil {
+		logger.Error("Failed to encode response", "error", err)
+		http.Error(w, "Internal server error", http.StatusInternalServerError)
+	}
+}
+
+// handleGetComputedMetricByName returns stored computed metrics filtered by a specific metric name across all plugins.
+func handleGetComputedMetricByName(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	// Extract metric name from URL path
+	metricName := strings.TrimPrefix(r.URL.Path, "/api/v1/computed-metrics/")
+	if metricName == "" {
+		http.Error(w, "Metric name is required", http.StatusBadRequest)
+		return
+	}
+
+	var response []ComputedMetricResponse
+	found := false
+
+	for _, wrapper := range pluginList {
+		if wrapper.ComputedMetrics != nil {
+			metricList, exists := wrapper.ComputedMetrics.MetricsByName[metricName]
+			if exists && len(metricList) > 0 {
+				found = true
+				response = append(response, ComputedMetricResponse{
+					PluginName:     wrapper.Name,
+					MetricsByName:  map[string][]models.Metric{metricName: metricList},
+					LastUpdateTime: wrapper.ComputedMetrics.LastUpdateTime,
+				})
+			}
+		}
+	}
+
+	if !found {
+		http.Error(w, "Metric not found", http.StatusNotFound)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	if err := json.NewEncoder(w).Encode(response); err != nil {
+		logger.Error("Failed to encode response", "error", err)
+		http.Error(w, "Internal server error", http.StatusInternalServerError)
 	}
 }
 

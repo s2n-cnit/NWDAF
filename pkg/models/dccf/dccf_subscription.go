@@ -6,7 +6,7 @@ import (
 	"go.mongodb.org/mongo-driver/bson/primitive"
 )
 
-// Package subscription provides functionality related to managing subscriptions made TO and BY the NF importing this package.
+// NotifEndpoint Package subscription provides functionality related to managing subscriptions made TO and BY the NF importing this package.
 // This includes creating, updating, and deleting subscriptions.
 // This package info is then used by the event manager to send data to data subscribers that have subscribed and to manage
 // notification coming from data sources.
@@ -15,12 +15,12 @@ type NotifEndpoint struct {
 	NotifCorrId string `bson:"notifCorrId"`
 }
 
-// Subscription describes an event subscription.
+// AnalyticSubscription Subscription describes an event subscription.
 type AnalyticSubscription struct {
 	ID             primitive.ObjectID           `bson:"_id,omitempty"`
 	AnaNotifUri    string                       `bson:"anaNotifUri"`
 	AnaNotifCorrId string                       `bson:"anaNotifCorrId"`
-	AnaSub         nwdaf.NwdafEventSubscription `bson:"anaSub"`
+	AnaSub         nwdaf.EventSubscriptionNWDAF `bson:"anaSub"`
 	NotifEndpoints []NotifEndpoint              `bson:"notifEndpoints"`
 }
 

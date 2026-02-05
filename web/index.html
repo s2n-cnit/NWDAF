@@ -1,0 +1,257 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>NWDAF Dashboard</title>
+
+    <!-- Local CSS -->
+    <link rel="stylesheet" href="libs/css/roboto.css">
+    <link rel="stylesheet" href="libs/css/material-icons.css">
+    <link rel="stylesheet" href="libs/css/materialize.min.css">
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <!-- Navigation Bar -->
+    <nav class="blue darken-2">
+        <div class="nav-wrapper container">
+            <a href="#" class="brand-logo">
+                <i class="material-icons">analytics</i>
+                NWDAF Dashboard
+            </a>
+            <ul class="right">
+                <li>
+                    <a href="#" id="refreshToggle" class="waves-effect">
+                        <i class="material-icons">pause</i>
+                    </a>
+                </li>
+                <li>
+                    <a href="#" class="dropdown-trigger" data-target="settings-dropdown">
+                        <i class="material-icons">settings</i>
+                    </a>
+                </li>
+            </ul>
+        </div>
+    </nav>
+
+    <!-- Settings Dropdown -->
+    <ul id="settings-dropdown" class="dropdown-content">
+        <li><a href="#!" id="clear-data">Clear Data</a></li>
+    </ul>
+
+    <div class="container">
+        <!-- Settings Panel -->
+        <div class="row" style="margin-top: 20px;">
+            <div class="col s12">
+                <div class="card">
+                    <div class="card-content">
+                        <span class="card-title">Settings</span>
+                        <div class="row">
+                            <div class="col s12 m6">
+                                <label for="pollingSlider">Polling Interval: <span id="pollingValue">5</span> seconds</label>
+                                <p class="range-field">
+                                    <input type="range" id="pollingSlider" min="2" max="60" value="5" step="1" />
+                                </p>
+                            </div>
+                            <div class="col s12 m6">
+                                <label>
+                                    <input type="checkbox" id="autoRefreshCheckbox" checked="checked" />
+                                    <span>Auto-refresh enabled</span>
+                                </label>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <!-- Status Bar -->
+        <div class="row">
+            <div class="col s12">
+                <div class="card-panel" id="statusBar">
+                    <span id="statusText">
+                        <i class="material-icons tiny">fiber_manual_record</i>
+                        Connecting...
+                    </span>
+                    <span class="right" id="lastUpdate">Never</span>
+                </div>
+            </div>
+        </div>
+
+        <!-- Metric Filters -->
+        <div class="row">
+            <div class="col s12 m6">
+                <div class="input-field">
+                    <i class="material-icons prefix">search</i>
+                    <input type="text" id="metricsFilter" placeholder="Filter raw metrics...">
+                    <label for="metricsFilter">Filter Raw Metrics</label>
+                </div>
+            </div>
+            <div class="col s12 m6">
+                <div class="input-field">
+                    <i class="material-icons prefix">search</i>
+                    <input type="text" id="computedFilter" placeholder="Filter computed metrics...">
+                    <label for="computedFilter">Filter Computed Metrics</label>
+                </div>
+            </div>
+        </div>
+
+        <!-- Side by Side Charts -->
+        <div class="row">
+            <!-- Raw Metrics -->
+            <div class="col s12 l6">
+                <div class="card">
+                    <div class="card-content">
+                        <span class="card-title">
+                            <i class="material-icons left">show_chart</i>
+                            Raw Metrics
+                        </span>
+                        <div id="metricsChartContainer">
+                            <canvas id="metricsChart"></canvas>
+                        </div>
+                        <div id="metricsEmpty" class="center-align" style="display: none; padding: 40px;">
+                            <i class="material-icons large grey-text">inbox</i>
+                            <h5 class="grey-text">No metrics data available</h5>
+                            <p class="grey-text">Waiting for data from collectors...</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Computed Metrics -->
+            <div class="col s12 l6">
+                <div class="card">
+                    <div class="card-content">
+                        <span class="card-title">
+                            <i class="material-icons left">trending_up</i>
+                            Computed Metrics (Forecasts)
+                        </span>
+                        <div id="computedChartContainer">
+                            <canvas id="computedChart"></canvas>
+                        </div>
+                        <div id="computedEmpty" class="center-align" style="display: none; padding: 40px;">
+                            <i class="material-icons large grey-text">inbox</i>
+                            <h5 class="grey-text">No computed metrics available</h5>
+                            <p class="grey-text">Waiting for analytics engine data...</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Tables Section -->
+        <div class="row">
+            <!-- Raw Metrics Table -->
+            <div class="col s12 l6">
+                <div class="card">
+                    <div class="card-content">
+                        <span class="card-title">Latest Raw Metrics</span>
+                        <div class="table-container">
+                            <table class="striped responsive-table">
+                                <thead>
+                                    <tr>
+                                        <th>Name</th>
+                                        <th>Value</th>
+                                        <th>NF Type</th>
+                                        <th>Time</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="metricsTableBody">
+                                    <tr>
+                                        <td colspan="4" class="center-align grey-text">No data</td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Computed Metrics Table -->
+            <div class="col s12 l6">
+                <div class="card">
+                    <div class="card-content">
+                        <span class="card-title">Latest Forecasts</span>
+                        <div class="table-container">
+                            <table class="striped responsive-table">
+                                <thead>
+                                    <tr>
+                                        <th>Name</th>
+                                        <th>Value</th>
+                                        <th>NF Type</th>
+                                        <th>Time</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="computedTableBody">
+                                    <tr>
+                                        <td colspan="4" class="center-align grey-text">No data</td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Overview Section -->
+        <div class="row">
+            <div class="col s12 m6 l4">
+                <div class="card">
+                    <div class="card-content">
+                        <span class="card-title">System Statistics</span>
+                        <div class="collection">
+                            <div class="collection-item">
+                                <span class="badge" id="totalMetrics">0</span>
+                                Total Metrics Received
+                            </div>
+                            <div class="collection-item">
+                                <span class="badge" id="totalComputed">0</span>
+                                Total Forecasts Generated
+                            </div>
+                            <div class="collection-item">
+                                <span class="badge" id="uniqueMetrics">0</span>
+                                Unique Metric Types
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div class="col s12 m6 l8">
+                <div class="card">
+                    <div class="card-content">
+                        <span class="card-title">Active Metrics</span>
+                        <div id="activeMetricsList" class="collection">
+                            <div class="collection-item center-align grey-text">
+                                No active metrics
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Footer -->
+    <footer class="page-footer blue darken-2">
+        <div class="container">
+            <div class="row">
+                <div class="col s12">
+                    <h5 class="white-text">NWDAF Dashboard</h5>
+                    <p class="grey-text text-lighten-4">Network Data Analytics Function - Real-time Monitoring</p>
+                </div>
+            </div>
+        </div>
+        <div class="footer-copyright">
+            <div class="container">
+                © 2026 NWDAF
+            </div>
+        </div>
+    </footer>
+
+    <!-- Local JavaScript -->
+    <script src="libs/js/chart.umd.js"></script>
+    <script src="libs/js/chartjs-adapter-date-fns.bundle.min.js"></script>
+    <script src="libs/js/materialize.min.js"></script>
+    <script src="app.js"></script>
+</body>
+</html>

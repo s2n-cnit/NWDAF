@@ -6,7 +6,7 @@ type ConsumerNfInformation struct {
 	TaiList string `json:"taiList"`
 }
 
-type NwdafEvent struct {
+type EventNWDAF struct {
 	Description string `json:"description"`
 }
 
@@ -15,7 +15,7 @@ type EventSubscription struct {
 	Event    string `json:"event"`
 }
 
-type NwdafEventSubscription struct {
+type EventSubscriptionNWDAF struct {
 	EventSubscriptions []EventSubscription   `json:"eventSubscriptions"` //TODO create model
 	ConsNfInfo         ConsumerNfInformation `json:"consNfInfo"`
 	NotifCorrId        string                `json:"notifCorrId"`

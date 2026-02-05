@@ -2,11 +2,12 @@ package models
 
 import (
 	"errors"
+	"reflect"
+
 	"github.com/s2n-cnit/nwdaf/pkg/models/dccf"
 	"github.com/s2n-cnit/nwdaf/pkg/models/nwdaf"
 	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/bson/primitive"
-	"reflect"
 )
 
 type Subscription interface {
@@ -25,7 +26,7 @@ const (
 )
 
 var subscriptionTypes = map[SubscriptionType]reflect.Type{
-	NwdafEventSubscription:   reflect.TypeOf(nwdaf.NwdafEventSubscription{}),
+	NwdafEventSubscription:   reflect.TypeOf(nwdaf.EventSubscriptionNWDAF{}),
 	DccfAnalyticSubscription: reflect.TypeOf(dccf.AnalyticSubscription{}),
 }
 

@@ -36,10 +36,13 @@ var (
 )
 
 func (collector *HPEAmfCollector) SetEnvironment() {
+	configuration.LoadEnv()
+	collector.logger.SetLevel(hclog.Level(configuration.GetEnvInt(configuration.EnvLogLevel, int(hclog.Debug))))
+
 	collector.coreIp = configuration.GetEnvStrNoDefault(plugin_shared.EnvHpeCoreIp)
 	collector.username = configuration.GetEnvStrNoDefault(plugin_shared.EnvHpeUsername)
 	collector.password = configuration.GetEnvStrNoDefault(plugin_shared.EnvHpePassword)
-	collector.metricPrefix = configuration.GetEnv(configuration.EnvMetricPrefix, "NWDAF_HPE_")
+	collector.metricPrefix = configuration.GetEnv(configuration.EnvMetricPrefix, "NWDAF_")
 	if collector.coreIp == nil || collector.username == nil || collector.password == nil {
 		collector.logger.Error("Missing HPE environment variables")
 		os.Exit(1)
@@ -111,31 +114,31 @@ func (collector *HPEAmfCollector) CollectSupiInfo() []models.Metric {
 	if err != nil {
 		collector.logger.Error("Error getting SUPIs:", err)
 		return nil
-	} else {
-		castedValue := resp.([]interface{})
-		SupiNumMetric := collector.BuildMetric("SUPI_NUM", "Number of SUPIs", float64(len(castedValue)))
-		registeredDevices := collector.BuildMetric("REGIS_DEV", "Number of registered devices", 0)
-		connectedDevices := collector.BuildMetric("CONN_DEV", "Number of connected devices", 0)
+	}
+	castedValue := resp.([]interface{})
+	SupiNumMetric := collector.BuildMetric("SUPI_NUM", "Number of SUPIs", float64(len(castedValue)))
+	registeredDevices := collector.BuildMetric("REGIS_DEV", "Number of registered devices", 0)
+	connectedDevices := collector.BuildMetric("CONN_DEV", "Number of connected devices", 0)
 
-		// TODO location info can be retrieved from the SUPIs
-		collector.logger.Debug("Getting SUPIs from HPE AMF")
-		for _, supi := range castedValue {
-			url := fmt.Sprintf("https://%v/core/amf/api/1/ue/status/supis/%v", *collector.coreIp, supi)
-			resp, err := http_internal.HttpRequestJsonBodyResp(url, http_internal.GET, nil, &collector.token)
-			if err != nil {
-				collector.logger.Error("Error getting SUPI info:", err)
-			} else {
-				supiInfo := resp.(map[string]interface{})
-				if supiInfo["mmState"] == "registered" {
-					registeredDevices.Value++
-				}
-				if supiInfo["cmState"] == "connected" {
-					connectedDevices.Value++
-				}
+	// TODO location info can be retrieved from the SUPIs
+	collector.logger.Debug("Getting SUPIs from HPE AMF")
+	for _, supi := range castedValue {
+		url := fmt.Sprintf("https://%v/core/amf/api/1/ue/status/supis/%v", *collector.coreIp, supi)
+		resp, err := http_internal.HttpRequestJsonBodyResp(url, http_internal.GET, nil, &collector.token)
+		if err != nil {
+			collector.logger.Error("Error getting SUPI info:", err)
+		} else {
+			supiInfo := resp.(map[string]interface{})
+			if supiInfo["mmState"] == "registered" {
+				registeredDevices.Value++
+			}
+			if supiInfo["cmState"] == "connected" {
+				connectedDevices.Value++
 			}
 		}
-		return []models.Metric{registeredDevices, connectedDevices, SupiNumMetric}
 	}
+	return []models.Metric{registeredDevices, connectedDevices, SupiNumMetric}
+
 }
 
 func main() {

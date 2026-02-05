@@ -3,9 +3,10 @@
 package plugin_shared
 
 import (
+	"net/rpc"
+
 	"github.com/hashicorp/go-plugin"
 	"github.com/s2n-cnit/nwdaf/pkg/models"
-	"net/rpc"
 )
 
 // MetricBuffer is a time-series buffer for storing historical metric values.
@@ -30,8 +31,8 @@ type AnalyticsAlgorithm interface {
 	ProcessMetric(metric models.Metric) bool
 
 	// Execute runs the analytics algorithm on the accumulated data.
-	// Returns a slice of computed metrics to be published to Redis.
-	Execute() []models.Metric
+	// Returns a map indexed by metric name, with slices of computed metrics to be published to Redis.
+	Execute() map[string][]models.Metric
 
 	// GetRequiredEnvVars returns the list of environment variables required by the plugin.
 	GetRequiredEnvVars() []string
@@ -76,8 +77,8 @@ func (g *AnalyticsAlgorithmRPC) ProcessMetric(metric models.Metric) bool {
 }
 
 // Execute calls the remote Execute method via RPC.
-func (g *AnalyticsAlgorithmRPC) Execute() []models.Metric {
-	var resp []models.Metric
+func (g *AnalyticsAlgorithmRPC) Execute() map[string][]models.Metric {
+	var resp map[string][]models.Metric
 	err := g.client.Call("Plugin.Execute", new(interface{}), &resp)
 	if err != nil {
 		panic(err)
@@ -129,7 +130,7 @@ func (s *AnalyticsAlgorithmRPCServer) ProcessMetric(metric models.Metric, resp *
 }
 
 // Execute calls Execute on the implementation.
-func (s *AnalyticsAlgorithmRPCServer) Execute(args interface{}, resp *[]models.Metric) error {
+func (s *AnalyticsAlgorithmRPCServer) Execute(args interface{}, resp *map[string][]models.Metric) error {
 	*resp = s.Impl.Execute()
 	return nil
 }

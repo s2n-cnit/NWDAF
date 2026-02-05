@@ -1,10 +1,11 @@
-// Description: This file contains the interface that the plugin exposes, the RPC implementation of the interface, and the plugin implementation for the interface.
+// Package plugin_shared Description: This file contains the interface that the plugin exposes, the RPC implementation of the interface, and the plugin implementation for the interface.
 package plugin_shared
 
 import (
+	"net/rpc"
+
 	"github.com/hashicorp/go-plugin"
 	"github.com/s2n-cnit/nwdaf/pkg/models"
-	"net/rpc"
 )
 
 // MetricCollector is the interface that we're exposing as a plugin.
@@ -59,7 +60,7 @@ func (s *MetricCollectorRPCServer) Collect(args interface{}, resp *[]models.Metr
 	return nil
 }
 
-// Collect calls the RequiredEnvVars method on the real implementation and sets the response.
+// GetRequiredEnvVars Collect calls the RequiredEnvVars method on the real implementation and sets the response.
 func (s *MetricCollectorRPCServer) GetRequiredEnvVars(args interface{}, resp *[]string) error {
 	print("RequiredEnvVars")
 	*resp = s.Impl.GetRequiredEnvVars()
