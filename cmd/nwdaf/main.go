@@ -72,6 +72,8 @@ func startHTTPServer(config *configuration.Config) {
 	// Proxy /api/computed-metrics* requests to analytics engine
 	mux.Handle("/api/computed-metrics", setupReverseProxy(analyticsEngineAPIPort, "Analytics Engine"))
 	mux.Handle("/api/computed-metrics/", setupReverseProxy(analyticsEngineAPIPort, "Analytics Engine"))
+	// For 6GReen deliverable
+	mux.Handle("/api/plugins/sarima_nue/forecast", setupReverseProxy(analyticsEngineAPIPort, "Analytics Engine"))
 
 	// Proxy /api/plugins requests to analytics engine
 	mux.Handle("/api/plugins", setupReverseProxy(analyticsEngineAPIPort, "Analytics Engine"))

@@ -2,6 +2,9 @@
 
 A modular and extensible implementation of the 5G Network Data Analytics Function (NWDAF) supporting multiple 5G core network implementations.
 
+> **Branch**: `deliverable3.3` - 6GREEN Project Implementation  
+> This branch contains specific features and endpoints developed for the 6GREEN H2020 project deliverable 3.3.
+
 ## Table of Contents
 - [Overview](#overview)
 - [Features](#features)
@@ -44,6 +47,9 @@ The NWDAF is a 5G core network function that collects, analyzes, and provides in
 ✅ Prometheus integration for monitoring  
 ✅ Automatic metric expiration (1-hour TTL)  
 ✅ Reverse proxy for microservice API aggregation  
+✅ Material Design web dashboard for real-time visualization  
+✅ Plugin metadata API (`/api/models`)  
+✅ SARIMA forecasting for connected UE prediction  
 
 ### Supported Core Networks
 
@@ -149,9 +155,17 @@ The NWDAF is a 5G core network function that collects, analyzes, and provides in
 - Start Analytics Engine microservice
 - Start Data Collectors (one per slice)
 - Register/deregister with NRF (optional, disabled by default for testing)
-- HTTP server with reverse proxy to Data Archiver API
+- HTTP server with reverse proxy to microservices
+- Serve web dashboard for real-time monitoring
 
 > **Note**: NRF registration is currently commented out in the code to facilitate testing. It can be enabled by uncommenting the `RegisterToNRF()` and `DeregisterFromNRF()` calls in `cmd/nwdaf/main.go`.
+
+**Proxied Endpoints** (default port 8080):
+- `/api/metrics` → Data Archiver (port 8081)
+- `/api/computed-metrics` → Analytics Engine (port 8084)
+- `/api/models` → Analytics Engine (port 8084)
+- `/api/plugins/sarima_nue/forecast` → Analytics Engine (port 8084, 6GREEN)
+- `/` → Web Dashboard (Material Design UI)
 
 **Config**: File-based (see Configuration section)
 
@@ -240,11 +254,19 @@ The NWDAF is a 5G core network function that collects, analyzes, and provides in
 - Temporal data accumulation (time-series buffering)
 - Minimum sample requirements before execution
 - Computed metrics published to Redis computedMetrics
+- REST API for retrieving computed metrics and plugin information
+
+**Endpoints**:
+- REST API: http://127.0.0.1:8084 (loopback only, proxied through main NWDAF)
+  - `/api/computed-metrics` - All computed metrics from plugins
+  - `/api/computed-metrics/{name}` - Specific metric by name
+  - `/api/models` - Information about loaded analytics plugins
+  - `/api/plugins/sarima_nue/forecast` - 6GREEN deliverable endpoint
 
 **Plugin System**:
 - Location: plugin/analytics/build/
-- Naming: <CORE_TYPE>_<algorithm_name>
-- Example: FAKE_moving_average, F5GC_arima_cpu
+- Naming: <CORE_TYPE>_<algorithm_name> or FAKE_<algorithm_name> for testing
+- Example: HPE_SARIMA_connected_ue, FAKE_SARIMA_number_ue
 
 **Environment Variables**:
 
@@ -264,6 +286,36 @@ The NWDAF is a 5G core network function that collects, analyzes, and provides in
 6. Engine calls Execute() to run algorithm
 7. Computed metrics published to computedMetrics topic
 8. Data Archiver picks up computed metrics
+
+---
+
+### 5. Web Dashboard (web/)
+
+**Purpose**: Real-time Material Design web interface for monitoring NWDAF metrics.
+
+**Features**:
+- Material Design UI (Materialize CSS)
+- Real-time metric visualization with Chart.js
+- Side-by-side display: raw metrics and forecasts
+- Configurable polling interval (2-60 seconds)
+- Metric filtering and search
+- Toggleable auto-refresh
+- Fully responsive (desktop/tablet/mobile)
+- Works offline (no CDN dependencies)
+
+**Access**: http://localhost:8080/
+
+**Key Components**:
+- `index.html` - Main UI structure
+- `styles.css` - Material Design styling
+- `app.js` - Application logic and Chart.js integration
+- `libs/` - Local copies of all dependencies
+
+**Data Sources**:
+- `/api/metrics` - Raw metrics from collectors
+- `/api/computed-metrics` - Forecasts from analytics plugins
+
+For detailed documentation, see [web/README.md](web/README.md).
 
 ---
 
@@ -612,7 +664,9 @@ go build -o plugin/analytics/build/F5GC_arima_cpu ./plugin/analytics/F5GC_arima_
 
 ### REST API
 
-**Base URL**: http://<server.bind_ip>:<server.port>
+**Base URL**: http://<server.bind_ip>:<server.port> (default: http://localhost:8080)
+
+All endpoints are proxied through the main NWDAF server to the appropriate microservices.
 
 ---
 
@@ -620,30 +674,27 @@ go build -o plugin/analytics/build/F5GC_arima_cpu ./plugin/analytics/F5GC_arima_
 
 #### GET /api/metrics
 
-**3GPP Reference**: TS 29.520 - Nnwdaf_AnalyticsInfo Service
+**3GPP Reference**: TS 29.520 - Nnwdaf_AnalyticsInfo Service  
+**Status**: ✅ **Implemented**
 
-Returns all active metrics in JSON format.
+Returns all active metrics collected from network functions.
 
 **Request Body**: Empty
 
 **Response** (200 OK):
 ```json
-[
-  {
-    "name": "latency_ms",
-    "description": "Average network latency in milliseconds",
-    "value": 15.7,
-    "nfid": "upf-001",
-    "nfType": "UPF"
-  },
-  {
-    "name": "authentication_success_rate",
-    "description": "Successful authentication rate percentage",
-    "value": 98.5,
-    "nfid": "ausf-001",
-    "nfType": "AUSF"
-  }
-]
+{
+  "HPE_CONN_DEV": [
+    {
+      "name": "HPE_CONN_DEV",
+      "description": "Number of connected devices",
+      "value": 42,
+      "nfid": "hpe-amf-001",
+      "nfType": "AMF",
+      "receivedAt": "2026-02-05T10:30:00Z"
+    }
+  ]
+}
 ```
 
 **Example**:
@@ -653,43 +704,76 @@ curl http://localhost:8080/api/metrics
 
 ---
 
-### Nnwdaf_MLModelProvision Service (Planned)
+#### GET /api/computed-metrics
+
+**Status**: ✅ **Implemented**
+
+Returns computed/forecasted metrics from analytics plugins.
+
+**Response** (200 OK):
+```json
+[
+  {
+    "pluginName": "HPESarimaConnectedUEPlugin",
+    "metricsByName": {
+      "HPE_CONN_DEV_forecasted_value": [
+        {
+          "name": "HPE_CONN_DEV_forecasted_value",
+          "description": "Forecasted value of connected UEs",
+          "value": 45.2,
+          "nfid": "hpe-amf-001",
+          "nfType": "AMF",
+          "receivedAt": "2026-02-05T10:35:00Z"
+        }
+      ]
+    },
+    "lastUpdateTime": "2026-02-05T10:30:15Z"
+  }
+]
+```
+
+**Example**:
+```bash
+curl http://localhost:8080/api/computed-metrics
+```
+
+---
+
+### Nnwdaf_MLModelProvision Service
 
 #### GET /api/models
 
-**3GPP Reference**: TS 29.520 - Nnwdaf_MLModelProvision Service
+**3GPP Reference**: TS 29.520 - Nnwdaf_MLModelProvision Service  
+**Status**: ✅ **Implemented**
 
-> **Status**: Planned for future implementation
-
-Returns information about available ML models and analytics plugins.
+Returns information about loaded analytics plugins/models.
 
 **Request Body**: Empty
 
 **Response** (200 OK):
 ```json
-{
-  "id": "AX2304LS",
-  "model": "SARIMA",
-  "description": "Sarima module for forecasting a specific value",
-  "required_metrics": [
-    {
-      "name": "authentication_success_rate",
-      "description": "Successful authentication rate percentage",
-      "value": null,
-      "nfid": "ausf-001",
-      "nfType": "AUSF"
-    }
-  ],
-  "produced_metrics": [
-    {
-      "name": "authentication_success_rate_prediction",
-      "description": "Forecasting of successful authentication rate percentage",
-      "value": null,
-      "nfid": "nwdaf-001",
-      "nfType": "NWDAF"
-    }
-  ]
-}
+[
+  {
+    "id": "PLUGIN_001",
+    "model": "SARIMA",
+    "description": "SARIMA forecasting algorithm for predicting number of connected UEs from HPE AMF metrics",
+    "required_metrics": [
+      {
+        "name": "HPE_CONN_DEV",
+        "description": "Number of connected devices from HPE AMF"
+      }
+    ],
+    "produced_metrics": [
+      {
+        "name": "HPE_CONN_DEV_forecasted_value",
+        "description": "Computed metric produced by HPESarimaConnectedUEPlugin"
+      }
+    ],
+    "minimum_samples": 10,
+    "execution_count": 42,
+    "last_execution_time": "2026-02-05T15:48:14+01:00"
+  }
+]
 ```
 
 **Example**:
@@ -699,40 +783,38 @@ curl http://localhost:8080/api/models
 
 ---
 
-### Nnwdaf_AnalyticsNumberUEsSARIMA Service (Planned)
+### 6GREEN Deliverable Extension
 
 #### GET /api/plugins/sarima_nue/forecast
 
-**3GPP Reference**: Custom extension for SARIMA forecasting
+**Status**: ✅ **Implemented** (6GREEN deliverable 3.3)
 
-> **Status**: Planned for future implementation
-
-Returns time-series forecast data from SARIMA analytics plugin.
+Returns SARIMA forecast data for HPE connected UE metrics. This endpoint is specific to the 6GREEN project deliverable.
 
 **Request Body**: Empty
 
 **Response** (200 OK):
 ```json
-{
-  "status": "success",
-  "data": {
-    "resultType": "matrix",
-    "result": [
-      {
-        "metric": {
-          "app": "nwdaf-forecast",
-          "nfid": "nwdaf-001",
-          "nfType": "NWDAF"
+[
+  {
+    "pluginName": "HPESarimaConnectedUEPlugin",
+    "metricsByName": {
+      "HPE_CONN_DEV_forecasted_value": [
+        {
+          "name": "HPE_CONN_DEV_forecasted_value",
+          "value": 45.2,
+          "receivedAt": "2026-02-05T10:35:00Z"
         },
-        "values": [
-          [1738503540, "45"],
-          [1738503555, "46"],
-          [1738503570, "44"]
-        ]
-      }
-    ]
+        {
+          "name": "HPE_CONN_DEV_forecasted_value",
+          "value": 46.8,
+          "receivedAt": "2026-02-05T10:40:00Z"
+        }
+      ]
+    },
+    "lastUpdateTime": "2026-02-05T10:30:15Z"
   }
-}
+]
 ```
 
 **Example**:
@@ -744,7 +826,8 @@ curl http://localhost:8080/api/plugins/sarima_nue/forecast
 
 ### Prometheus API
 
-**Endpoint**: http://localhost:2112/metrics
+**Endpoint**: http://localhost:2112/metrics  
+**Status**: ✅ **Implemented**
 
 Standard Prometheus exposition format for all collected and computed metrics.
 

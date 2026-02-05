@@ -380,6 +380,7 @@ func startHTTPServer() {
 
 	http.HandleFunc("/api/computed-metrics", handleGetAllComputedMetrics)
 	http.HandleFunc("/api/computed-metrics/", handleGetComputedMetricByName)
+	http.HandleFunc("/api/plugins/sarima_nue/forecast", handleGetComputedMetricByNameNue)
 	http.HandleFunc("/api/models", handleGetPlugins)
 
 	addr := fmt.Sprintf(":%d", port)
@@ -429,6 +430,45 @@ func handleGetComputedMetricByName(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Metric name is required", http.StatusBadRequest)
 		return
 	}
+
+	var response []ComputedMetricResponse
+	found := false
+
+	for _, wrapper := range pluginList {
+		if wrapper.ComputedMetrics != nil {
+			metricList, exists := wrapper.ComputedMetrics.MetricsByName[metricName]
+			if exists && len(metricList) > 0 {
+				found = true
+				response = append(response, ComputedMetricResponse{
+					PluginName:     wrapper.Name,
+					MetricsByName:  map[string][]models.Metric{metricName: metricList},
+					LastUpdateTime: wrapper.ComputedMetrics.LastUpdateTime,
+				})
+			}
+		}
+	}
+
+	if !found {
+		http.Error(w, "Metric not found", http.StatusNotFound)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	if err := json.NewEncoder(w).Encode(response); err != nil {
+		logger.Error("Failed to encode response", "error", err)
+		http.Error(w, "Internal server error", http.StatusInternalServerError)
+	}
+}
+
+// handleGetComputedMetricByName returns stored computed metrics filtered by a specific metric name across all plugins.
+func handleGetComputedMetricByNameNue(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	// Extract metric name from URL path
+	metricName := "HPE_CONN_DEV_forecasted_value"
 
 	var response []ComputedMetricResponse
 	found := false
