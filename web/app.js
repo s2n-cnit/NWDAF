@@ -544,8 +544,8 @@ class NWDAFDashboard {
             const name = metric.Name || metric.name || metric.metric_name || metric.metricName || 'N/A';
             const value = metric.Value !== undefined ? metric.Value :
                          metric.value !== undefined ? metric.value : 'N/A';
-            const nfType = metric.NFType || metric.nf_type || metric.type || 'N/A';
-            const timestamp = metric.ReceivedAt || metric.received_at || metric.timestamp || metric.time;
+            const nfType = metric.nfType || 'N/A';
+            const timestamp = metric.receivedAt;
 
             return `
                 <tr>
@@ -573,8 +573,8 @@ class NWDAFDashboard {
             const name = metric.Name || metric.name || metric.metric_name || metric.metricName || 'N/A';
             const value = metric.Value !== undefined ? metric.Value :
                          metric.value !== undefined ? metric.value : 'N/A';
-            const nfType = metric.NFType || metric.nf_type || metric.type || 'N/A';
-            const timestamp = metric.ReceivedAt || metric.received_at || metric.timestamp || metric.time;
+            const nfType = metric.nfType || 'N/A';
+            const timestamp = metric.receivedAt || 'N/A';
 
             return `
                 <tr>

@@ -183,12 +183,24 @@ func (p *HPESarimaConnectedUEPlugin) Execute() map[string][]models.Metric {
 			return result
 		}
 
+		// Check if the model is nil even when no error was returned
+		if fittedModel == nil {
+			p.logger.Error("ARIMA model is nil despite no error")
+			p.fittedModel = nil
+			return result
+		}
+
 		p.newSamples = 0
 		p.fittedModel = fittedModel
 		p.meanSampleTimeDistance = meanSampleTimeDistance
 
-		// Generate forecasts
-		forecasts, _ := fittedModel.Predict(p.config.SamplesRefreshModel)
+		// Generate forecasts using the instance variable (not the local one)
+		forecasts, predictErr := p.fittedModel.Predict(p.config.SamplesRefreshModel)
+		if predictErr != nil {
+			p.logger.Error("Failed to generate forecasts", "error", predictErr)
+			return result
+		}
+
 		p.forecastedValues = make([]models.Metric, 0, len(forecasts))
 
 		lastMetric := p.metricBuffer[len(p.metricBuffer)-1]

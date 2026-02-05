@@ -10,7 +10,7 @@ const (
 	DefaultSamplesRefreshModel = 10
 
 	// DefaultMinimumSamples is the default minimum number of samples required before first execution
-	DefaultMinimumSamples = 10
+	DefaultMinimumSamples = 15
 )
 
 // Environment variable names for analytics plugin configuration

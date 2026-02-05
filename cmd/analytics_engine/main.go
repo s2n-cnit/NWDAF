@@ -226,10 +226,19 @@ func LoadPlugin(file os.DirEntry) *plugin.Client {
 		}
 		pluginList = append(pluginList, wrapper)
 
-		logger.Info("Analytics plugin enabled",
+		logger.Info("Analytics plugin loaded successfully",
 			"name", wrapper.Name,
-			"subscribedMetrics", subscribedMetrics,
 			"minimumSamples", wrapper.MinimumSamples)
+
+		// Print subscribed metrics list
+		if len(subscribedMetrics) == 0 {
+			logger.Warn("Plugin subscribes to NO metrics", "plugin", wrapper.Name)
+		} else {
+			logger.Info("Plugin subscribed metrics", "plugin", wrapper.Name, "count", len(subscribedMetrics))
+			for i, metricName := range subscribedMetrics {
+				logger.Info("  Subscribed metric", "plugin", wrapper.Name, "index", i+1, "metric", metricName)
+			}
+		}
 	}
 
 	return client
@@ -254,39 +263,51 @@ func ProcessMetricWithPlugins(metric models.Metric) {
 
 		logger.Trace("Processing metric with plugin", "plugin", wrapper.Name, "metric", metric.Name)
 
-		// Let the plugin process the metric
-		shouldExecute := wrapper.Plugin.ProcessMetric(metric)
+		// Wrap plugin execution in panic recovery to prevent crashes
+		func() {
+			defer func() {
+				if r := recover(); r != nil {
+					logger.Error("Plugin panicked during execution",
+						"plugin", wrapper.Name,
+						"metric", metric.Name,
+						"panic", r)
+				}
+			}()
 
-		// Execute the algorithm if the plugin indicates it's ready
-		if shouldExecute {
-			logger.Debug("Executing analytics algorithm", "plugin", wrapper.Name)
+			// Let the plugin process the metric
+			shouldExecute := wrapper.Plugin.ProcessMetric(metric)
 
-			// Execute the algorithm
-			computedMetricsMap := wrapper.Plugin.Execute()
-			logger.Trace("Analytics algorithm returned metrics", "plugin", wrapper.Name, "metrics", computedMetricsMap)
+			// Execute the algorithm if the plugin indicates it's ready
+			if shouldExecute {
+				logger.Debug("Executing analytics algorithm", "plugin", wrapper.Name)
 
-			// Update wrapper metadata
-			wrapper.LastExecutionTime = time.Now()
-			wrapper.ExecutionCount++
+				// Execute the algorithm
+				computedMetricsMap := wrapper.Plugin.Execute()
+				logger.Trace("Analytics algorithm returned metrics", "plugin", wrapper.Name, "metrics", computedMetricsMap)
 
-			// Store full metric lists by name, but publish only the first element of each list.
-			storedMetrics := make(map[string][]models.Metric)
-			publishedMetrics := make([]models.Metric, 0)
-			for metricName, metricList := range computedMetricsMap {
-				if len(metricList) > 0 {
-					storedMetrics[metricName] = metricList
-					publishedMetrics = append(publishedMetrics, metricList[0])
+				// Update wrapper metadata
+				wrapper.LastExecutionTime = time.Now()
+				wrapper.ExecutionCount++
+
+				// Store full metric lists by name, but publish only the first element of each list.
+				storedMetrics := make(map[string][]models.Metric)
+				publishedMetrics := make([]models.Metric, 0)
+				for metricName, metricList := range computedMetricsMap {
+					if len(metricList) > 0 {
+						storedMetrics[metricName] = metricList
+						publishedMetrics = append(publishedMetrics, metricList[0])
+					}
+				}
+
+				// Store computed metrics in wrapper (replace existing)
+				if len(storedMetrics) > 0 {
+					storeComputedMetrics(wrapper, storedMetrics)
+					PublishComputedMetrics(publishedMetrics, wrapper.Name)
+				} else {
+					logger.Warn("Analytics algorithm returned no metrics", "plugin", wrapper.Name)
 				}
 			}
-
-			// Store computed metrics in wrapper (replace existing)
-			if len(storedMetrics) > 0 {
-				storeComputedMetrics(wrapper, storedMetrics)
-				PublishComputedMetrics(publishedMetrics, wrapper.Name)
-			} else {
-				logger.Warn("Analytics algorithm returned no metrics", "plugin", wrapper.Name)
-			}
-		}
+		}() // End of panic recovery function
 	}
 }
 

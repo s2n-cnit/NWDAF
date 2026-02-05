@@ -125,9 +125,10 @@ func main() {
 
 	// Start the analytics engine microservice
 	analyticsEnv := map[string]string{
-		configuration.EnvRedisUri: configur.Redis.URI,
-		configuration.EnvCoreType: string(configur.CoreType),
-		configuration.EnvLogLevel: strconv.Itoa(int(configur.LogLevel)),
+		configuration.EnvRedisUri:     configur.Redis.URI,
+		configuration.EnvCoreType:     string(configur.CoreType),
+		configuration.EnvLogLevel:     strconv.Itoa(int(configur.LogLevel)),
+		configuration.EnvMetricPrefix: configur.CoreType.String() + "_",
 	}
 	if configur.Redis.Password != "" {
 		analyticsEnv[configuration.EnvRedisPassword] = configur.Redis.Password
