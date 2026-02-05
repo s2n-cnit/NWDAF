@@ -44,6 +44,8 @@ The NWDAF is a 5G core network function that collects, analyzes, and provides in
 ✅ Prometheus integration for monitoring  
 ✅ Automatic metric expiration (1-hour TTL)  
 ✅ Reverse proxy for microservice API aggregation  
+✅ Material Design web dashboard for real-time visualization  
+✅ Plugin metadata API (`/api/models`, `/api/plugins`)  
 
 ### Supported Core Networks
 
@@ -149,9 +151,18 @@ The NWDAF is a 5G core network function that collects, analyzes, and provides in
 - Start Analytics Engine microservice
 - Start Data Collectors (one per slice)
 - Register/deregister with NRF (optional, disabled by default for testing)
-- HTTP server with reverse proxy to Data Archiver API
+- HTTP server with reverse proxy to microservices
+- Serve web dashboard
 
 > **Note**: NRF registration is currently commented out in the code to facilitate testing. It can be enabled by uncommenting the `RegisterToNRF()` and `DeregisterFromNRF()` calls in `cmd/nwdaf/main.go`.
+
+**Proxied API Endpoints** (port 8080):
+- `/api/metrics` → Data Archiver (8081)
+- `/api/computed-metrics` → Analytics Engine (8084)
+- `/api/models` → Analytics Engine (8084)
+- `/api/plugins` → Analytics Engine (8084)
+- `/prometheus/metrics` → Prometheus (2112)
+- `/` → Web Dashboard
 
 **Config**: File-based (see Configuration section)
 
@@ -240,6 +251,13 @@ The NWDAF is a 5G core network function that collects, analyzes, and provides in
 - Temporal data accumulation (time-series buffering)
 - Minimum sample requirements before execution
 - Computed metrics published to Redis computedMetrics
+- REST API for computed metrics and plugin info
+
+**API Endpoints** (port 8084, accessed via NWDAF proxy):
+- `/api/computed-metrics` - All computed metrics
+- `/api/computed-metrics/{name}` - Specific metric
+- `/api/models` - Plugin metadata
+- `/api/plugins` - Plugin metadata (alias)
 
 **Plugin System**:
 - Location: plugin/analytics/build/
@@ -264,6 +282,36 @@ The NWDAF is a 5G core network function that collects, analyzes, and provides in
 6. Engine calls Execute() to run algorithm
 7. Computed metrics published to computedMetrics topic
 8. Data Archiver picks up computed metrics
+
+---
+
+### 5. Web Dashboard (web/)
+
+**Purpose**: Real-time Material Design web interface for monitoring NWDAF metrics.
+
+**Features**:
+- Material Design UI (Materialize CSS)
+- Real-time metric visualization with Chart.js
+- Side-by-side display: raw metrics and forecasts
+- Configurable polling interval (2-60 seconds)
+- Metric filtering and search
+- Toggleable auto-refresh
+- Fully responsive (desktop/tablet/mobile)
+- Works offline (no CDN dependencies)
+
+**Access**: http://localhost:8080/
+
+**Key Components**:
+- `index.html` - Main UI structure
+- `styles.css` - Material Design styling
+- `app.js` - Application logic and Chart.js integration
+- `libs/` - Local copies of all dependencies
+
+**Data Sources**:
+- `/api/metrics` - Raw metrics from collectors
+- `/api/computed-metrics` - Forecasts from analytics plugins
+
+For detailed documentation, see [web/README.md](web/README.md).
 
 ---
 
@@ -610,137 +658,108 @@ go build -o plugin/analytics/build/F5GC_arima_cpu ./plugin/analytics/F5GC_arima_
 
 ## API Reference
 
-### REST API
+### REST API Endpoints
 
-**Base URL**: http://<server.bind_ip>:<server.port>
+**Base URL**: `http://localhost:8080` (NWDAF main server)
+
+All endpoints are reverse-proxied through the main NWDAF server to the appropriate microservices.
 
 ---
 
-### Nnwdaf_AnalyticsInfo Service
+#### GET `/api/metrics`
 
-#### GET /api/metrics
+Returns all active raw metrics collected from network functions.
 
-**3GPP Reference**: TS 29.520 - Nnwdaf_AnalyticsInfo Service
+**Response**: JSON array of metrics  
+**Proxied to**: Data Archiver (port 8081)
 
-Returns all active metrics in JSON format.
-
-**Request Body**: Empty
-
-**Response** (200 OK):
-```json
-[
-  {
-    "name": "latency_ms",
-    "description": "Average network latency in milliseconds",
-    "value": 15.7,
-    "nfid": "upf-001",
-    "nfType": "UPF"
-  },
-  {
-    "name": "authentication_success_rate",
-    "description": "Successful authentication rate percentage",
-    "value": 98.5,
-    "nfid": "ausf-001",
-    "nfType": "AUSF"
-  }
-]
-```
-
-**Example**:
 ```bash
 curl http://localhost:8080/api/metrics
 ```
 
 ---
 
-### Nnwdaf_MLModelProvision Service (Planned)
+#### GET `/api/computed-metrics`
 
-#### GET /api/models
+Returns all computed/forecasted metrics from analytics plugins.
 
-**3GPP Reference**: TS 29.520 - Nnwdaf_MLModelProvision Service
+**Response**: JSON array of computed metric responses  
+**Proxied to**: Analytics Engine (port 8084)
 
-> **Status**: Planned for future implementation
-
-Returns information about available ML models and analytics plugins.
-
-**Request Body**: Empty
-
-**Response** (200 OK):
-```json
-{
-  "id": "AX2304LS",
-  "model": "SARIMA",
-  "description": "Sarima module for forecasting a specific value",
-  "required_metrics": [
-    {
-      "name": "authentication_success_rate",
-      "description": "Successful authentication rate percentage",
-      "value": null,
-      "nfid": "ausf-001",
-      "nfType": "AUSF"
-    }
-  ],
-  "produced_metrics": [
-    {
-      "name": "authentication_success_rate_prediction",
-      "description": "Forecasting of successful authentication rate percentage",
-      "value": null,
-      "nfid": "nwdaf-001",
-      "nfType": "NWDAF"
-    }
-  ]
-}
+```bash
+curl http://localhost:8080/api/computed-metrics
 ```
 
-**Example**:
+---
+
+#### GET `/api/computed-metrics/{name}`
+
+Returns computed metrics filtered by metric name.
+
+**Response**: JSON array filtered by metric name  
+**Proxied to**: Analytics Engine (port 8084)
+
+```bash
+curl http://localhost:8080/api/computed-metrics/HPE_CONN_DEV_forecasted_value
+```
+
+---
+
+#### GET `/api/models`
+
+Returns information about loaded analytics plugins/models.
+
+**Response**: JSON array of plugin metadata (ID, model type, description, required/produced metrics)  
+**Proxied to**: Analytics Engine (port 8084)
+
 ```bash
 curl http://localhost:8080/api/models
 ```
 
 ---
 
-### Nnwdaf_AnalyticsNumberUEsSARIMA Service (Planned)
+#### GET `/api/plugins`
 
-#### GET /api/plugins/sarima_nue/forecast
+Alias for `/api/models` - returns analytics plugin information.
 
-**3GPP Reference**: Custom extension for SARIMA forecasting
+**Response**: Same as `/api/models`  
+**Proxied to**: Analytics Engine (port 8084)
 
-> **Status**: Planned for future implementation
-
-Returns time-series forecast data from SARIMA analytics plugin.
-
-**Request Body**: Empty
-
-**Response** (200 OK):
-```json
-{
-  "status": "success",
-  "data": {
-    "resultType": "matrix",
-    "result": [
-      {
-        "metric": {
-          "app": "nwdaf-forecast",
-          "nfid": "nwdaf-001",
-          "nfType": "NWDAF"
-        },
-        "values": [
-          [1738503540, "45"],
-          [1738503555, "46"],
-          [1738503570, "44"]
-        ]
-      }
-    ]
-  }
-}
-```
-
-**Example**:
 ```bash
-curl http://localhost:8080/api/plugins/sarima_nue/forecast
+curl http://localhost:8080/api/plugins
 ```
 
 ---
+
+#### GET `/prometheus/metrics`
+
+Returns metrics in Prometheus exposition format for scraping.
+
+**Response**: Prometheus text format  
+**Proxied to**: Prometheus endpoint (port 2112)
+
+```bash
+curl http://localhost:8080/prometheus/metrics
+```
+
+**Direct access** (not proxied):
+```bash
+curl http://localhost:2112/metrics
+```
+
+---
+
+#### GET `/`
+
+Web dashboard for real-time metric visualization.
+
+**Response**: HTML/CSS/JS Material Design dashboard  
+**Features**: Charts, filtering, auto-refresh, responsive design
+
+Open in browser: `http://localhost:8080/`
+
+---
+
 
 ### Prometheus API
 

@@ -63,6 +63,7 @@ func setupReverseProxy(port int, serviceName string) http.Handler {
 func startHTTPServer(config *configuration.Config) {
 	darchiverAPIPort := configuration.GetEnvInt(configuration.EnvDArchiverAPIPort, 8081)
 	analyticsEngineAPIPort := configuration.GetEnvInt(configuration.EnvAnalyticsEngineAPIPort, 8084)
+	prometheusPort := configuration.GetEnvInt(configuration.EnvPrometheusLocalPort, 2112)
 
 	mux := http.NewServeMux()
 
@@ -76,6 +77,9 @@ func startHTTPServer(config *configuration.Config) {
 	// Proxy /api/plugins requests to analytics engine
 	mux.Handle("/api/plugins", setupReverseProxy(analyticsEngineAPIPort, "Analytics Engine"))
 	mux.Handle("/api/models", setupReverseProxy(analyticsEngineAPIPort, "Analytics Engine"))
+
+	// Proxy /prometheus/metrics to Prometheus endpoint (data archiver)
+	mux.Handle("/prometheus/metrics", setupReverseProxy(prometheusPort, "Prometheus"))
 
 	// Serve web UI from web directory
 	webHandler := web.GetHandler("web")
