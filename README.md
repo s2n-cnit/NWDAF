@@ -110,7 +110,7 @@ The NWDAF is a 5G core network function that collects, analyzes, and provides in
           ┌──────────┴──────────┐
           ▼                     ▼
     [Prometheus]           [REST API]
-    port 2112           /api/metrics
+    port 2112           /api/metrics + api/computed-metrics
 ```
 
 ### Data Flow
