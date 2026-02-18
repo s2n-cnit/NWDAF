@@ -11,13 +11,39 @@ import (
 	"github.com/s2n-cnit/nwdaf/plugin/plugin_shared"
 )
 
+// MovAvgSubscribedMetrics defines the metrics this plugin subscribes to
+var MovAvgSubscribedMetrics = []string{"NWDAF_cpu_usage_percent", "NWDAF_memory_usage_bytes"}
+
 // MovAvgPlugin implements a simple moving average analytics algorithm.
 // It subscribes to CPU usage metrics and computes a moving average.
 type MovAvgPlugin struct {
 	logger         hclog.Logger
+	bufferedLogger *plugin_shared.BufferedLogger
 	metricBuffer   []models.Metric
 	windowSize     int
 	minimumSamples int
+}
+
+func (p *MovAvgPlugin) GetDescription() string {
+	return "FAKE Moving average algorithm for testing purposes - generates predictions for CPU and memory metrics"
+}
+
+func (p *MovAvgPlugin) GetProducedMetrics() []string {
+	// !!! A FAKE list of produced metrics based on subscribed metrics
+	producedMetrics := make([]string, 0, len(MovAvgSubscribedMetrics))
+	for _, metricName := range MovAvgSubscribedMetrics {
+		producedMetrics = append(producedMetrics, fmt.Sprintf("%s_forecasted_value", metricName))
+	}
+	return producedMetrics
+}
+
+func (p *MovAvgPlugin) GetMetricDescriptions() map[string]string {
+	// !!! A FAKE list of produced metrics DESCRIPTIONS based on subscribed metrics
+	producedMetrics := make(map[string]string)
+	for _, metricName := range MovAvgSubscribedMetrics {
+		producedMetrics[metricName] = fmt.Sprintf("%s_forecasted_value", metricName)
+	}
+	return producedMetrics
 }
 
 var (
@@ -39,7 +65,9 @@ var (
 )
 
 func (p *MovAvgPlugin) SetEnvironment(debugMode bool) {
-	configuration.LoadEnv()
+	p.bufferedLogger = plugin_shared.NewBufferedLogger(p.logger, debugMode)
+
+	configuration.LoadEnvWithBufferedLogger(p.bufferedLogger, "FAKE_moving_average")
 	p.logger.SetLevel(hclog.Level(configuration.GetEnvInt(configuration.EnvLogLevel, int(hclog.Debug))))
 
 	// Skip cookie setup in debug mode
@@ -53,6 +81,10 @@ func (p *MovAvgPlugin) SetEnvironment(debugMode bool) {
 		HandShakeConfigAnalytics.MagicCookieKey = *cookieName
 		HandShakeConfigAnalytics.MagicCookieValue = *cookieValue
 	}
+
+	if p.bufferedLogger != nil {
+		p.bufferedLogger.StartNormalLogging()
+	}
 }
 
 // GetName returns the unique name for this plugin.
@@ -62,10 +94,7 @@ func (p *MovAvgPlugin) GetName() string {
 
 // GetSubscribedMetrics returns the list of metrics this plugin subscribes to.
 func (p *MovAvgPlugin) GetSubscribedMetrics() []string {
-	return []string{
-		"NWDAF_cpu_usage_percent",
-		"NWDAF_memory_usage_bytes",
-	}
+	return MovAvgSubscribedMetrics
 }
 
 // GetMinimumSamples returns the minimum number of samples required.
@@ -160,20 +189,28 @@ func (p *MovAvgPlugin) GetRequiredEnvVars() []string {
 	return []string{}
 }
 
+// GetStartupLogs returns buffered logs from plugin initialization.
+func (p *MovAvgPlugin) GetStartupLogs() []plugin_shared.StartupLog {
+	if p.bufferedLogger == nil {
+		return []plugin_shared.StartupLog{}
+	}
+	return p.bufferedLogger.GetStartupLogs()
+}
+
 // main is the entry point for the plugin.
 func main() {
-	debug_locally := false
+	debugLocally := false
 	args := os.Args[1:]
 	for _, argument := range args {
 		if argument == "--debug-locally" {
-			debug_locally = true
+			debugLocally = true
 		}
 	}
 
-	MovingAverageAlgorithm.SetEnvironment(debug_locally)
+	MovingAverageAlgorithm.SetEnvironment(debugLocally)
 
 	// If run as a standalone program for debugging
-	if debug_locally {
+	if debugLocally {
 		// Test the plugin locally
 		MovingAverageAlgorithm.logger.Info("Running in debug mode")
 

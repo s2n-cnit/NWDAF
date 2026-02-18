@@ -13,14 +13,15 @@ tls:
 trusted_proxies:
   - "192.168.0.0/16"
   - "127.0.0.1/32"
-log_level: 1
+# Trace Level = 1, Debug Level = 2, Info Level = 3, Warn Level = 4, Error Level = 5, Off Level = 6
+log_level: 3
 log_tag: "Tag"
 prometheus_port: 2112
 redis:
   uri: "localhost:6379"
   password: ""
 nrf_uri: "localhost:29510"
-core_type: "Free5GC"
+core_type: "FAKE"
 # Normally we should take NFs from the NRF, but it could be useful to have them addressed in the slices
 slices:
   - id: "1"

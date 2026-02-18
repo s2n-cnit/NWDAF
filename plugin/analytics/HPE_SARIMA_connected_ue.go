@@ -18,6 +18,7 @@ import (
 // collected from HPE AMF core
 type HPESarimaConnectedUEPlugin struct {
 	logger                 hclog.Logger
+	bufferedLogger         *plugin_shared.BufferedLogger
 	config                 *plugin_shared.AnalyticsConfig
 	metricBuffer           []models.Metric
 	newSamples             int
@@ -48,7 +49,9 @@ var (
 )
 
 func (p *HPESarimaConnectedUEPlugin) SetEnvironment(debugMode bool) {
-	configuration.LoadEnv()
+	p.bufferedLogger = plugin_shared.NewBufferedLogger(p.logger, debugMode)
+
+	configuration.LoadEnvWithBufferedLogger(p.bufferedLogger, "HPE_SARIMA_connected_ue")
 	p.logger.SetLevel(hclog.Level(configuration.GetEnvInt(configuration.EnvLogLevel, int(hclog.Debug))))
 
 	// Load analytics configuration from environment or use defaults
@@ -61,7 +64,7 @@ func (p *HPESarimaConnectedUEPlugin) SetEnvironment(debugMode bool) {
 	// Get the metric prefix from environment variable (default: "NWDAF_")
 	p.metricPrefix = configuration.GetEnv(configuration.EnvMetricPrefix, "NWDAF_")
 	p.subscribedMetricName = fmt.Sprintf("%sCONN_DEV", p.metricPrefix)
-	p.logger.Info("Subscribed metric name", "metric", p.subscribedMetricName)
+	p.bufferedLogger.Info("Subscribed metric name", "metric", p.subscribedMetricName)
 
 	// Skip cookie setup in debug mode
 	if !debugMode {
@@ -73,6 +76,10 @@ func (p *HPESarimaConnectedUEPlugin) SetEnvironment(debugMode bool) {
 		}
 		HPESarimaConnectedUEHandShakeConfigAnalytics.MagicCookieKey = *cookieName
 		HPESarimaConnectedUEHandShakeConfigAnalytics.MagicCookieValue = *cookieValue
+	}
+
+	if p.bufferedLogger != nil {
+		p.bufferedLogger.StartNormalLogging()
 	}
 }
 
@@ -256,20 +263,28 @@ func (p *HPESarimaConnectedUEPlugin) GetRequiredEnvVars() []string {
 	return []string{}
 }
 
+// GetStartupLogs returns buffered logs from plugin initialization.
+func (p *HPESarimaConnectedUEPlugin) GetStartupLogs() []plugin_shared.StartupLog {
+	if p.bufferedLogger == nil {
+		return []plugin_shared.StartupLog{}
+	}
+	return p.bufferedLogger.GetStartupLogs()
+}
+
 // main is the entry point for the plugin.
 func main() {
-	debug_locally := false
+	debugLocally := false
 	args := os.Args[1:]
 	for _, argument := range args {
 		if argument == "--debug-locally" {
-			debug_locally = true
+			debugLocally = true
 		}
 	}
 
-	HPESarimaConnectedUEAlgorithm.SetEnvironment(debug_locally)
+	HPESarimaConnectedUEAlgorithm.SetEnvironment(debugLocally)
 
 	// If run as a standalone program for debugging
-	if debug_locally {
+	if debugLocally {
 		// Test the plugin locally
 		HPESarimaConnectedUEAlgorithm.logger.Info("Running in debug mode")
 
@@ -297,11 +312,11 @@ func main() {
 		for _, metric := range testMetrics {
 			ready := HPESarimaConnectedUEAlgorithm.ProcessMetric(metric)
 			if ready {
-				forecast_metrics_map := HPESarimaConnectedUEAlgorithm.Execute()
+				forecastMetricsMap := HPESarimaConnectedUEAlgorithm.Execute()
 				outputMetricName := fmt.Sprintf("%s_forecasted_value", HPESarimaConnectedUEAlgorithm.subscribedMetricName)
-				forecast_metrics := forecast_metrics_map[outputMetricName]
-				HPESarimaConnectedUEAlgorithm.logger.Info("Forecast generated", "count", len(forecast_metrics))
-				for _, fm := range forecast_metrics {
+				forecastMetrics := forecastMetricsMap[outputMetricName]
+				HPESarimaConnectedUEAlgorithm.logger.Info("Forecast generated", "count", len(forecastMetrics))
+				for _, fm := range forecastMetrics {
 					HPESarimaConnectedUEAlgorithm.logger.Info("Forecasted value", "value", fm.Value, "time", fm.ReceivedAt)
 				}
 			}

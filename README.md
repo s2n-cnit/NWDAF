@@ -2,9 +2,6 @@
 
 A modular and extensible implementation of the 5G Network Data Analytics Function (NWDAF) supporting multiple 5G core network implementations.
 
-> **Branch**: `deliverable3.3` - 6GREEN Project Implementation  
-> This branch contains specific features and endpoints developed for the 6GREEN H2020 project deliverable 3.3.
-
 ## Table of Contents
 - [Overview](#overview)
 - [Features](#features)
@@ -48,8 +45,7 @@ The NWDAF is a 5G core network function that collects, analyzes, and provides in
 ✅ Automatic metric expiration (1-hour TTL)  
 ✅ Reverse proxy for microservice API aggregation  
 ✅ Material Design web dashboard for real-time visualization  
-✅ Plugin metadata API (`/api/models`)  
-✅ SARIMA forecasting for connected UE prediction  
+✅ Plugin metadata API (`/api/models`, `/api/plugins`)  
 
 ### Supported Core Networks
 
@@ -114,7 +110,7 @@ The NWDAF is a 5G core network function that collects, analyzes, and provides in
           ┌──────────┴──────────┐
           ▼                     ▼
     [Prometheus]           [REST API]
-    port 2112           /api/metrics
+    port 2112           /api/metrics + api/computed-metrics
 ```
 
 ### Data Flow
@@ -156,16 +152,17 @@ The NWDAF is a 5G core network function that collects, analyzes, and provides in
 - Start Data Collectors (one per slice)
 - Register/deregister with NRF (optional, disabled by default for testing)
 - HTTP server with reverse proxy to microservices
-- Serve web dashboard for real-time monitoring
+- Serve web dashboard
 
 > **Note**: NRF registration is currently commented out in the code to facilitate testing. It can be enabled by uncommenting the `RegisterToNRF()` and `DeregisterFromNRF()` calls in `cmd/nwdaf/main.go`.
 
-**Proxied Endpoints** (default port 8080):
-- `/api/metrics` → Data Archiver (port 8081)
-- `/api/computed-metrics` → Analytics Engine (port 8084)
-- `/api/models` → Analytics Engine (port 8084)
-- `/api/plugins/sarima_nue/forecast` → Analytics Engine (port 8084, 6GREEN)
-- `/` → Web Dashboard (Material Design UI)
+**Proxied API Endpoints** (port 8080):
+- `/api/metrics` → Data Archiver (8081)
+- `/api/computed-metrics` → Analytics Engine (8084)
+- `/api/models` → Analytics Engine (8084)
+- `/api/plugins` → Analytics Engine (8084)
+- `/prometheus/metrics` → Prometheus (2112)
+- `/` → Web Dashboard
 
 **Config**: File-based (see Configuration section)
 
@@ -254,19 +251,18 @@ The NWDAF is a 5G core network function that collects, analyzes, and provides in
 - Temporal data accumulation (time-series buffering)
 - Minimum sample requirements before execution
 - Computed metrics published to Redis computedMetrics
-- REST API for retrieving computed metrics and plugin information
+- REST API for computed metrics and plugin info
 
-**Endpoints**:
-- REST API: http://127.0.0.1:8084 (loopback only, proxied through main NWDAF)
-  - `/api/computed-metrics` - All computed metrics from plugins
-  - `/api/computed-metrics/{name}` - Specific metric by name
-  - `/api/models` - Information about loaded analytics plugins
-  - `/api/plugins/sarima_nue/forecast` - 6GREEN deliverable endpoint
+**API Endpoints** (port 8084, accessed via NWDAF proxy):
+- `/api/computed-metrics` - All computed metrics
+- `/api/computed-metrics/{name}` - Specific metric
+- `/api/models` - Plugin metadata
+- `/api/plugins` - Plugin metadata (alias)
 
 **Plugin System**:
 - Location: plugin/analytics/build/
-- Naming: <CORE_TYPE>_<algorithm_name> or FAKE_<algorithm_name> for testing
-- Example: HPE_SARIMA_connected_ue, FAKE_SARIMA_number_ue
+- Naming: <CORE_TYPE>_<algorithm_name>
+- Example: FAKE_moving_average, F5GC_arima_cpu
 
 **Environment Variables**:
 
@@ -316,6 +312,29 @@ The NWDAF is a 5G core network function that collects, analyzes, and provides in
 - `/api/computed-metrics` - Forecasts from analytics plugins
 
 For detailed documentation, see [web/README.md](web/README.md).
+
+---
+
+## Quick Start with Docker
+
+Want to get NWDAF running quickly? Follow the [Quick Start Guide](QUICKSTART.md) for a streamlined Docker Compose setup.
+
+**In 5 minutes you'll have:**
+- ✅ All plugins built
+- ✅ Redis and Prometheus running
+- ✅ NWDAF with all microservices operational
+- ✅ Web dashboard with real-time metrics
+- ✅ REST APIs ready for integration
+
+```bash
+# Quick commands
+bash scripts/build_plugins.sh all
+docker compose -f docker-compose.infra.yml up -d
+docker compose up -d
+# Open http://localhost:8080
+```
+
+For detailed instructions, plugin development workflow, and troubleshooting, see **[QUICKSTART.md](QUICKSTART.md)**.
 
 ---
 
@@ -662,172 +681,112 @@ go build -o plugin/analytics/build/F5GC_arima_cpu ./plugin/analytics/F5GC_arima_
 
 ## API Reference
 
-### REST API
+### REST API Endpoints
 
-**Base URL**: http://<server.bind_ip>:<server.port> (default: http://localhost:8080)
+**Base URL**: `http://localhost:8080` (NWDAF main server)
 
-All endpoints are proxied through the main NWDAF server to the appropriate microservices.
+All endpoints are reverse-proxied through the main NWDAF server to the appropriate microservices.
 
 ---
 
-### Nnwdaf_AnalyticsInfo Service
+#### GET `/api/metrics`
 
-#### GET /api/metrics
+Returns all active raw metrics collected from network functions.
 
-**3GPP Reference**: TS 29.520 - Nnwdaf_AnalyticsInfo Service  
-**Status**: ✅ **Implemented**
+**Response**: JSON array of metrics  
+**Proxied to**: Data Archiver (port 8081)
 
-Returns all active metrics collected from network functions.
-
-**Request Body**: Empty
-
-**Response** (200 OK):
-```json
-{
-  "HPE_CONN_DEV": [
-    {
-      "name": "HPE_CONN_DEV",
-      "description": "Number of connected devices",
-      "value": 42,
-      "nfid": "hpe-amf-001",
-      "nfType": "AMF",
-      "receivedAt": "2026-02-05T10:30:00Z"
-    }
-  ]
-}
-```
-
-**Example**:
 ```bash
 curl http://localhost:8080/api/metrics
 ```
 
 ---
 
-#### GET /api/computed-metrics
+#### GET `/api/computed-metrics`
 
-**Status**: ✅ **Implemented**
+Returns all computed/forecasted metrics from analytics plugins.
 
-Returns computed/forecasted metrics from analytics plugins.
+**Response**: JSON array of computed metric responses  
+**Proxied to**: Analytics Engine (port 8084)
 
-**Response** (200 OK):
-```json
-[
-  {
-    "pluginName": "HPESarimaConnectedUEPlugin",
-    "metricsByName": {
-      "HPE_CONN_DEV_forecasted_value": [
-        {
-          "name": "HPE_CONN_DEV_forecasted_value",
-          "description": "Forecasted value of connected UEs",
-          "value": 45.2,
-          "nfid": "hpe-amf-001",
-          "nfType": "AMF",
-          "receivedAt": "2026-02-05T10:35:00Z"
-        }
-      ]
-    },
-    "lastUpdateTime": "2026-02-05T10:30:15Z"
-  }
-]
-```
-
-**Example**:
 ```bash
 curl http://localhost:8080/api/computed-metrics
 ```
 
 ---
 
-### Nnwdaf_MLModelProvision Service
+#### GET `/api/computed-metrics/{name}`
 
-#### GET /api/models
+Returns computed metrics filtered by metric name.
 
-**3GPP Reference**: TS 29.520 - Nnwdaf_MLModelProvision Service  
-**Status**: ✅ **Implemented**
+**Response**: JSON array filtered by metric name  
+**Proxied to**: Analytics Engine (port 8084)
+
+```bash
+curl http://localhost:8080/api/computed-metrics/HPE_CONN_DEV_forecasted_value
+```
+
+---
+
+#### GET `/api/models`
 
 Returns information about loaded analytics plugins/models.
 
-**Request Body**: Empty
+**Response**: JSON array of plugin metadata (ID, model type, description, required/produced metrics)  
+**Proxied to**: Analytics Engine (port 8084)
 
-**Response** (200 OK):
-```json
-[
-  {
-    "id": "PLUGIN_001",
-    "model": "SARIMA",
-    "description": "SARIMA forecasting algorithm for predicting number of connected UEs from HPE AMF metrics",
-    "required_metrics": [
-      {
-        "name": "HPE_CONN_DEV",
-        "description": "Number of connected devices from HPE AMF"
-      }
-    ],
-    "produced_metrics": [
-      {
-        "name": "HPE_CONN_DEV_forecasted_value",
-        "description": "Computed metric produced by HPESarimaConnectedUEPlugin"
-      }
-    ],
-    "minimum_samples": 10,
-    "execution_count": 42,
-    "last_execution_time": "2026-02-05T15:48:14+01:00"
-  }
-]
-```
-
-**Example**:
 ```bash
 curl http://localhost:8080/api/models
 ```
 
 ---
 
-### 6GREEN Deliverable Extension
+#### GET `/api/plugins`
 
-#### GET /api/plugins/sarima_nue/forecast
+Alias for `/api/models` - returns analytics plugin information.
 
-**Status**: ✅ **Implemented** (6GREEN deliverable 3.3)
+**Response**: Same as `/api/models`  
+**Proxied to**: Analytics Engine (port 8084)
 
-Returns SARIMA forecast data for HPE connected UE metrics. This endpoint is specific to the 6GREEN project deliverable.
-
-**Request Body**: Empty
-
-**Response** (200 OK):
-```json
-[
-  {
-    "pluginName": "HPESarimaConnectedUEPlugin",
-    "metricsByName": {
-      "HPE_CONN_DEV_forecasted_value": [
-        {
-          "name": "HPE_CONN_DEV_forecasted_value",
-          "value": 45.2,
-          "receivedAt": "2026-02-05T10:35:00Z"
-        },
-        {
-          "name": "HPE_CONN_DEV_forecasted_value",
-          "value": 46.8,
-          "receivedAt": "2026-02-05T10:40:00Z"
-        }
-      ]
-    },
-    "lastUpdateTime": "2026-02-05T10:30:15Z"
-  }
-]
-```
-
-**Example**:
 ```bash
-curl http://localhost:8080/api/plugins/sarima_nue/forecast
+curl http://localhost:8080/api/plugins
 ```
 
 ---
 
+#### GET `/prometheus/metrics`
+
+Returns metrics in Prometheus exposition format for scraping.
+
+**Response**: Prometheus text format  
+**Proxied to**: Prometheus endpoint (port 2112)
+
+```bash
+curl http://localhost:8080/prometheus/metrics
+```
+
+**Direct access** (not proxied):
+```bash
+curl http://localhost:2112/metrics
+```
+
+---
+
+#### GET `/`
+
+Web dashboard for real-time metric visualization.
+
+**Response**: HTML/CSS/JS Material Design dashboard  
+**Features**: Charts, filtering, auto-refresh, responsive design
+
+Open in browser: `http://localhost:8080/`
+
+---
+
+
 ### Prometheus API
 
-**Endpoint**: http://localhost:2112/metrics  
-**Status**: ✅ **Implemented**
+**Endpoint**: http://localhost:2112/metrics
 
 Standard Prometheus exposition format for all collected and computed metrics.
 

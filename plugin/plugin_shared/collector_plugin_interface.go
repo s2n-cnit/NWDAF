@@ -16,6 +16,11 @@ type MetricCollector interface {
 	// GetRequiredEnvVars returns a slice of environment variables required by the plugin. If any of these
 	// environment variables are not set, the plugin will not be able to run.
 	GetRequiredEnvVars() []string
+	// GetStartupLogs returns buffered logs from plugin initialization.
+	// This is called by the host after RPC handshake completes to retrieve
+	// any warnings or info messages that occurred during plugin setup.
+	// The buffer is cleared after this call.
+	GetStartupLogs() []StartupLog
 }
 
 // MetricCollectorRPC is the implementation of the MetricCollector interface over RPC.
@@ -47,6 +52,17 @@ func (g *MetricCollectorRPC) GetRequiredEnvVars() []string {
 	return resp
 }
 
+// GetStartupLogs calls the remote GetStartupLogs method via RPC.
+func (g *MetricCollectorRPC) GetStartupLogs() []StartupLog {
+	var resp []StartupLog
+	err := g.client.Call("Plugin.GetStartupLogs", new(interface{}), &resp)
+	if err != nil {
+		// Return empty slice if method not implemented (backward compatibility)
+		return []StartupLog{}
+	}
+	return resp
+}
+
 // MetricCollectorRPCServer is the RPC server that MetricCollectorRPC talks to,
 // conforming to the requirements of net/rpc.
 type MetricCollectorRPCServer struct {
@@ -64,6 +80,12 @@ func (s *MetricCollectorRPCServer) Collect(args interface{}, resp *[]models.Metr
 func (s *MetricCollectorRPCServer) GetRequiredEnvVars(args interface{}, resp *[]string) error {
 	print("RequiredEnvVars")
 	*resp = s.Impl.GetRequiredEnvVars()
+	return nil
+}
+
+// GetStartupLogs calls GetStartupLogs on the implementation.
+func (s *MetricCollectorRPCServer) GetStartupLogs(args interface{}, resp *[]StartupLog) error {
+	*resp = s.Impl.GetStartupLogs()
 	return nil
 }
 

@@ -16,10 +16,11 @@ import (
 
 // F5GAmfCollector is a collector for Free5GC AMF metrics.
 type F5GAmfCollector struct {
-	logger       hclog.Logger
-	metricPrefix string
-	amfIP        string
-	amfSubURL    string
+	logger         hclog.Logger
+	bufferedLogger *plugin_shared.BufferedLogger
+	metricPrefix   string
+	amfIP          string
+	amfSubURL      string
 }
 
 var (
@@ -41,8 +42,10 @@ var (
 	}
 )
 
-func (collector *F5GAmfCollector) SetEnvironment() {
-	configuration.LoadEnv()
+func (collector *F5GAmfCollector) SetEnvironment(debugMode bool) {
+	collector.bufferedLogger = plugin_shared.NewBufferedLogger(collector.logger, debugMode)
+
+	configuration.LoadEnvWithBufferedLogger(collector.bufferedLogger, "F5GC_amf_collector")
 	amfIPEnv := configuration.GetEnvStrNoDefault(plugin_shared.EnvFree5GCAmfIp)
 	if amfIPEnv == nil {
 		collector.logger.Error("Environment variable not set", "variable", plugin_shared.EnvFree5GCAmfIp)
@@ -52,31 +55,37 @@ func (collector *F5GAmfCollector) SetEnvironment() {
 	collector.logger.SetLevel(hclog.Level(configuration.GetEnvInt(configuration.EnvLogLevel, int(hclog.Debug))))
 	metricPrefix = configuration.GetEnv(configuration.EnvMetricPrefix, "NWDAF_")
 
-	cookieName := configuration.GetEnvStrNoDefault(plugin_shared.EnvMagicCookieKeyName)
-	cookieValue := configuration.GetEnvStrNoDefault(plugin_shared.EnvMagicCookieKeyValue)
-	if cookieName == nil || cookieValue == nil {
-		collector.logger.Error("Missing COOKIE name and value variables for RPC")
-		os.Exit(1)
+	if !debugMode {
+		cookieName := configuration.GetEnvStrNoDefault(plugin_shared.EnvMagicCookieKeyName)
+		cookieValue := configuration.GetEnvStrNoDefault(plugin_shared.EnvMagicCookieKeyValue)
+		if cookieName == nil || cookieValue == nil {
+			collector.logger.Error("Missing COOKIE name and value variables for RPC")
+			os.Exit(1)
+		}
+		HandShakeConfigAmfCollector.MagicCookieKey = *cookieName
+		HandShakeConfigAmfCollector.MagicCookieValue = *cookieValue
 	}
-	HandShakeConfigAmfCollector.MagicCookieKey = *cookieName
-	HandShakeConfigAmfCollector.MagicCookieValue = *cookieValue
 
 	F5GCAmfCollector.amfIP = *amfIPEnv
 	F5GCAmfCollector.amfSubURL = "http://" + *amfIPEnv + ":31682/namf-evts/v1/subscriptions"
 	F5GCAmfCollector.metricPrefix = metricPrefix
+
+	if collector.bufferedLogger != nil {
+		collector.bufferedLogger.StartNormalLogging()
+	}
 }
 
 // main is the entry point for the F5GAmfCollector application.
 func main() {
-	F5GCAmfCollector.SetEnvironment()
-
-	debug_locally := false
+	debugLocally := false
 	args := os.Args[1:]
 	for _, argument := range args {
 		if argument == "--debug-locally" {
-			debug_locally = true
+			debugLocally = true
 		}
 	}
+
+	F5GCAmfCollector.SetEnvironment(debugLocally)
 
 	// Read the JSON template for the AMF subscription
 	fileContent, err := os.ReadFile("plugin/collectors/templates/F5GC_amf_request.json")
@@ -86,7 +95,7 @@ func main() {
 	amfJsonSubBody = string(fileContent)
 
 	// If run as a standalone program, collect metrics locally, if loaded as a plugin, serve the plugin
-	if debug_locally {
+	if debugLocally {
 		F5GCAmfCollector.Collect()
 	} else {
 		// pluginMap is the map of plugins we can dispense.
@@ -116,17 +125,17 @@ func (collector *F5GAmfCollector) Collect() []models.Metric {
 	collector.logger.Debug("Response body:", resp.Body)
 
 	var result freemodels.AmfCreatedEventSubscription
-	err_dec := json.NewDecoder(resp.Body).Decode(&result)
-	if err_dec != nil {
+	errDec := json.NewDecoder(resp.Body).Decode(&result)
+	if errDec != nil {
 		collector.logger.Error("Error decoding JSON response:", err)
 	}
 
 	// After response is decoded, build the metrics as a standard NWDAF model
-	metrics_map := collector.BuildMetrics(result)
+	metricsMap := collector.BuildMetrics(result)
 
 	// Preallocate the list with the length of the map for better performance
-	list := make([]models.Metric, 0, len(metrics_map))
-	for _, value := range metrics_map {
+	list := make([]models.Metric, 0, len(metricsMap))
+	for _, value := range metricsMap {
 		list = append(list, value)
 	}
 
@@ -136,6 +145,14 @@ func (collector *F5GAmfCollector) Collect() []models.Metric {
 // GetRequiredEnvVars returns the list of environment variables required by the plugin.
 func (collector *F5GAmfCollector) GetRequiredEnvVars() []string {
 	return plugin_shared.Free5GCAmfRequiredEnvVars
+}
+
+// GetStartupLogs returns buffered logs from plugin initialization.
+func (collector *F5GAmfCollector) GetStartupLogs() []plugin_shared.StartupLog {
+	if collector.bufferedLogger == nil {
+		return []plugin_shared.StartupLog{}
+	}
+	return collector.bufferedLogger.GetStartupLogs()
 }
 
 // BuildMetrics builds the metrics from the AMF subscription response.

@@ -63,6 +63,7 @@ func setupReverseProxy(port int, serviceName string) http.Handler {
 func startHTTPServer(config *configuration.Config) {
 	darchiverAPIPort := configuration.GetEnvInt(configuration.EnvDArchiverAPIPort, 8081)
 	analyticsEngineAPIPort := configuration.GetEnvInt(configuration.EnvAnalyticsEngineAPIPort, 8084)
+	prometheusPort := configuration.GetEnvInt(configuration.EnvPrometheusLocalPort, 2112)
 
 	mux := http.NewServeMux()
 
@@ -78,6 +79,9 @@ func startHTTPServer(config *configuration.Config) {
 	// Proxy /api/plugins requests to analytics engine
 	mux.Handle("/api/plugins", setupReverseProxy(analyticsEngineAPIPort, "Analytics Engine"))
 	mux.Handle("/api/models", setupReverseProxy(analyticsEngineAPIPort, "Analytics Engine"))
+
+	// Proxy /prometheus/metrics to Prometheus endpoint (data archiver)
+	mux.Handle("/prometheus/metrics", setupReverseProxy(prometheusPort, "Prometheus"))
 
 	// Serve web UI from web directory
 	webHandler := web.GetHandler("web")
@@ -105,7 +109,7 @@ func main() {
 	logger.Info("Starting NWDAF, PID is ", os.Getpid())
 
 	// Load environment variables and configuration
-	configuration.LoadEnv()
+	configuration.LoadEnvWithLogger(logger, "NWDAF Main")
 	configur, err := configuration.LoadConfig(nil)
 	if err != nil {
 		logger.Error("Error loading configuration", "error", err)
@@ -188,13 +192,13 @@ func StartMonitorSlices(configur *configuration.Config) {
 
 // startMicroservice starts a microservice as a separate process.
 // It takes the path to the executable, a map of environment variables, a boolean to inherit existing environment variables, and the name of the microservice.
-func startMicroservice(path string, envVars map[string]string, inherit_env bool, name string) *exec.Cmd {
+func startMicroservice(path string, envVars map[string]string, inheritEnv bool, name string) *exec.Cmd {
 	cmd := exec.Command(path)
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 
 	// Set environment variables
-	if inherit_env {
+	if inheritEnv {
 		cmd.Env = os.Environ()
 	} // inherit existing environment variables
 	for key, value := range envVars {

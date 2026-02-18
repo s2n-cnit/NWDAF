@@ -44,14 +44,14 @@ const (
 // - An error if there was an issue with the request or response.
 func HttpRequestJsonBodyResp(url string, requestType RequestType, body map[string]string, bearerTokenPointer *string) (interface{}, error) {
 	// Encode the body map to JSON.
-	encoded_body, err := json.Marshal(body)
+	encodedBody, err := json.Marshal(body)
 	if err != nil {
 		logger.Error("Error encoding JSON body:", err)
 		return nil, err
 	}
 
 	// Create a new HTTP request with the specified type and URL.
-	req, err := http.NewRequest(string(requestType), url, bytes.NewReader(encoded_body))
+	req, err := http.NewRequest(string(requestType), url, bytes.NewReader(encodedBody))
 	if err != nil {
 		logger.Error("Error creating POST request:", err)
 		return nil, err

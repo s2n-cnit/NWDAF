@@ -77,7 +77,7 @@ type AnalyticsPluginWrapper struct {
 }
 
 func SetEnvironment() {
-	configuration.LoadEnv()
+	configuration.LoadEnvWithLogger(logger, "Analytics Engine")
 	logger.SetLevel(hclog.Level(configuration.GetEnvInt(configuration.EnvLogLevel, int(hclog.Debug))))
 
 	// Get the core type from the environment variable.
@@ -175,7 +175,7 @@ func LoadPlugin(file os.DirEntry) *plugin.Client {
 	// Start the RPC client for the plugin.
 	rpcClient, err := client.Client()
 	if err != nil {
-		logger.Error("Error starting RPC for plugin", "plugin", file.Name(), "error", err)
+		logger.Error("Error starting RPC for plugin", "plugin", file.Name(), "location", PluginFolder+file.Name(), "error", err)
 		client.Kill()
 		return client
 	}
@@ -191,25 +191,46 @@ func LoadPlugin(file os.DirEntry) *plugin.Client {
 
 	// Check if LoadedPlugin is nil
 	if LoadedPlugin == nil {
-		logger.Error("Plugin dispense returned nil", "plugin", file.Name())
+		logger.Error("Plugin dispense returned nil, skipping", "plugin", file.Name())
 		client.Kill()
 		return client
 	}
 
+	// Type assertion with safety check
+	analyticsPlugin, ok := LoadedPlugin.(shared2.AnalyticsAlgorithm)
+	if !ok {
+		logger.Error("Plugin does not implement AnalyticsAlgorithm interface, skipping", "plugin", file.Name())
+		client.Kill()
+		return client
+	}
+
+	// Retrieve and print buffered startup logs from plugin initialization
+	startupLogs := analyticsPlugin.GetStartupLogs()
+	for _, log := range startupLogs {
+		logMessage := fmt.Sprintf("[PLUGIN:%s][STARTUP] %s", file.Name(), log.Message)
+		switch log.Level {
+		case "WARN":
+			logger.Warn(logMessage, "timestamp", log.Timestamp, "fields", log.Fields)
+		case "INFO":
+			logger.Info(logMessage, "timestamp", log.Timestamp, "fields", log.Fields)
+		default:
+			logger.Debug(logMessage, "timestamp", log.Timestamp, "fields", log.Fields)
+		}
+	}
+
 	// Check if all required environment variables are set for the specific plugin
-	plugin_enabled := true
-	analyticsPlugin := LoadedPlugin.(shared2.AnalyticsAlgorithm)
+	pluginEnabled := true
 	for _, envVar := range analyticsPlugin.GetRequiredEnvVars() {
 		_, exists := configuration.GetEnvNoDefault(envVar)
 		if !exists {
 			logger.Error("Required environment variable not set for plugin", "plugin", file.Name(), "envVar", envVar)
-			plugin_enabled = false
+			pluginEnabled = false
 			break
 		}
 	}
 
 	// If all required environment variables are set, wrap and add the plugin
-	if plugin_enabled {
+	if pluginEnabled {
 		subscribedMetrics := analyticsPlugin.GetSubscribedMetrics()
 		subscribedMap := make(map[string]bool)
 		for _, metricName := range subscribedMetrics {
@@ -228,7 +249,8 @@ func LoadPlugin(file os.DirEntry) *plugin.Client {
 		}
 		pluginList = append(pluginList, wrapper)
 
-		logger.Info("Analytics plugin loaded successfully",
+		logger.Info("Analytics plugin successfully loaded and enabled",
+			"plugin", file.Name(),
 			"name", wrapper.Name,
 			"minimumSamples", wrapper.MinimumSamples)
 
@@ -241,6 +263,9 @@ func LoadPlugin(file os.DirEntry) *plugin.Client {
 				logger.Info("  Subscribed metric", "plugin", wrapper.Name, "index", i+1, "metric", metricName)
 			}
 		}
+	} else {
+		logger.Warn("Analytics plugin loaded but disabled due to missing environment variables", "plugin", file.Name())
+		client.Kill()
 	}
 
 	return client

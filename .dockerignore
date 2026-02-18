@@ -1,0 +1,91 @@
+# Git files
+.git
+.gitignore
+.gitattributes
+
+# IDE and editor files
+.idea
+.vscode
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Documentation
+*.md
+docs/
+README.md
+
+# Docker files
+Dockerfile
+docker-compose.yml
+.dockerignore
+
+# Build artifacts (will be built in container)
+plugin/collectors/build/
+plugin/analytics/build/
+bin/
+build/
+
+# Go build cache
+.cache/
+
+# Test files
+*_test.go
+**/*_test.go
+
+# Environment files with secrets
+.env
+.env.*
+!.env.example
+
+# Logs (will be written at runtime)
+logs/
+*.log
+
+# Temporary files
+tmp/
+temp/
+*.tmp
+
+# OS files
+Thumbs.db
+
+# Coverage reports
+coverage.out
+*.cover
+
+# Kubernetes/deployment files
+k8s/
+kubernetes/
+helm/
+*.yaml.backup
+
+# CI/CD
+.github/
+.gitlab-ci.yml
+.circleci/
+
+# Vendor directory (if using vendoring)
+vendor/
+
+# Node modules (if any)
+node_modules/
+
+# Certificates (should be mounted)
+certs/
+*.pem
+*.key
+*.crt
+
+# Database files
+*.db
+*.sqlite
+*.sqlite3
+
+# MongoDB dumps
+dump/
+
+# Backup files
+*.bak
+*.backup

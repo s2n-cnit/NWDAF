@@ -15,11 +15,12 @@ import (
 	"github.com/sartorproj/goarima/timeseries"
 )
 
-var SubscribedMetrics = []string{"NWDAF_cpu_usage_percent", "NWDAF_memory_usage_bytes"}
+var SarimaNueSubscribedMetrics = []string{"NWDAF_cpu_usage_percent", "NWDAF_memory_usage_bytes"}
 
 // SarimaNuePlugin implements a simple SARIMA/ARIMA forecasting algorithm to predict the number of connected UE's'
 type SarimaNuePlugin struct {
 	logger                 hclog.Logger
+	bufferedLogger         *plugin_shared.BufferedLogger // Used during initialization to buffer logs
 	config                 *plugin_shared.AnalyticsConfig
 	metricBuffer           map[string][]models.Metric
 	newSamples             map[string]int
@@ -51,7 +52,12 @@ var (
 )
 
 func (p *SarimaNuePlugin) SetEnvironment(debugMode bool) {
-	configuration.LoadEnv()
+	// Create buffered logger to capture initialization warnings
+	// In debug mode, logs go directly to output; in plugin mode, they're buffered
+	p.bufferedLogger = plugin_shared.NewBufferedLogger(p.logger, debugMode)
+
+	// Use buffered logger for LoadEnv to prevent warnings during RPC handshake
+	configuration.LoadEnvWithBufferedLogger(p.bufferedLogger, "FAKE_SARIMA_number_ue")
 	p.logger.SetLevel(hclog.Level(configuration.GetEnvInt(configuration.EnvLogLevel, int(hclog.Debug))))
 
 	// Load analytics configuration from environment or use defaults
@@ -74,6 +80,11 @@ func (p *SarimaNuePlugin) SetEnvironment(debugMode bool) {
 	}
 
 	p.newSamples = make(map[string]int)
+
+	// After initialization, switch buffered logger to normal logging mode
+	if p.bufferedLogger != nil {
+		p.bufferedLogger.StartNormalLogging()
+	}
 }
 
 // GetName returns the unique name of the plugin
@@ -88,8 +99,8 @@ func (p *SarimaNuePlugin) GetDescription() string {
 
 // GetProducedMetrics returns the list of metric names this plugin produces.
 func (p *SarimaNuePlugin) GetProducedMetrics() []string {
-	producedMetrics := make([]string, 0, len(SubscribedMetrics))
-	for _, metricName := range SubscribedMetrics {
+	producedMetrics := make([]string, 0, len(SarimaNueSubscribedMetrics))
+	for _, metricName := range SarimaNueSubscribedMetrics {
 		producedMetrics = append(producedMetrics, fmt.Sprintf("%s_forecasted_value", metricName))
 	}
 	return producedMetrics
@@ -105,7 +116,7 @@ func (p *SarimaNuePlugin) GetMetricDescriptions() map[string]string {
 
 // GetSubscribedMetrics returns the list of metrics this plugin subscribes to.
 func (p *SarimaNuePlugin) GetSubscribedMetrics() []string {
-	return SubscribedMetrics
+	return SarimaNueSubscribedMetrics
 }
 
 func (p *SarimaNuePlugin) IsMetricSubscribed(metric models.Metric) bool {
@@ -273,6 +284,14 @@ func (p *SarimaNuePlugin) GetRequiredEnvVars() []string {
 	return []string{}
 }
 
+// GetStartupLogs returns buffered logs from plugin initialization.
+func (p *SarimaNuePlugin) GetStartupLogs() []plugin_shared.StartupLog {
+	if p.bufferedLogger == nil {
+		return []plugin_shared.StartupLog{}
+	}
+	return p.bufferedLogger.GetStartupLogs()
+}
+
 // GenerateSeasonalTestData returns a train/test split of synthetic seasonal metrics.
 func GenerateSeasonalTestData(seasonality int, mean float64, stdDev float64, numberOfSeasons int, sampleTimeDistance time.Duration) ([]models.Metric, []models.Metric) {
 	numberGenerators := make([]func() float64, seasonality)
@@ -287,7 +306,7 @@ func GenerateSeasonalTestData(seasonality int, mean float64, stdDev float64, num
 	timemultiplicator := 1
 	for i := 0; i < numberOfSeasons+1; i++ {
 		for _, generator := range numberGenerators {
-			metric := models.Metric{Name: SubscribedMetrics[0], Value: generator(), ReceivedAt: firstSampleTime.Add(sampleTimeDistance * time.Duration(timemultiplicator))}
+			metric := models.Metric{Name: SarimaNueSubscribedMetrics[0], Value: generator(), ReceivedAt: firstSampleTime.Add(sampleTimeDistance * time.Duration(timemultiplicator))}
 			timemultiplicator++
 			metricSeries = append(metricSeries, metric)
 		}
@@ -297,18 +316,18 @@ func GenerateSeasonalTestData(seasonality int, mean float64, stdDev float64, num
 
 // main is the entry point for the plugin.
 func main() {
-	debug_locally := false
+	debugLocally := false
 	args := os.Args[1:]
 	for _, argument := range args {
 		if argument == "--debug-locally" {
-			debug_locally = true
+			debugLocally = true
 		}
 	}
 
-	SarimaNueAlgorithm.SetEnvironment(debug_locally)
+	SarimaNueAlgorithm.SetEnvironment(debugLocally)
 
 	// If run as a standalone program for debugging
-	if debug_locally {
+	if debugLocally {
 		// Test the plugin locally
 		SarimaNueAlgorithm.logger.Info("Running in debug mode")
 
@@ -319,37 +338,37 @@ func main() {
 			SarimaNueAlgorithm.ProcessMetric(metric)
 		}
 
-		forecast_metrics_map := SarimaNueAlgorithm.Execute()
+		forecastMetricsMap := SarimaNueAlgorithm.Execute()
 
 		// Get the forecasted metrics for the first subscribed metric
-		forecastedMetricName := fmt.Sprintf("%s_forecasted_value", SubscribedMetrics[0])
-		forecast_metrics := forecast_metrics_map[forecastedMetricName]
+		forecastedMetricName := fmt.Sprintf("%s_forecasted_value", SarimaNueSubscribedMetrics[0])
+		forecastMetrics := forecastMetricsMap[forecastedMetricName]
 
 		sumSquaredError := 0.0
 		sumSquaredDeviation := 0.0
 		meanForecast := 0.0
 
 		// Calculate mean of forecasts
-		for _, forecast_metric := range forecast_metrics {
-			meanForecast += forecast_metric.Value
+		for _, forecastMetric := range forecastMetrics {
+			meanForecast += forecastMetric.Value
 		}
-		meanForecast /= float64(len(forecast_metrics))
+		meanForecast /= float64(len(forecastMetrics))
 
 		// Calculate MSE and Variance
-		for index, forecast_metric := range forecast_metrics {
-			SarimaNueAlgorithm.logger.Info("Difference", "Forecasted metric", forecast_metric.Value, "Real metric", testMetricSeries[index].Value)
+		for index, forecastMetric := range forecastMetrics {
+			SarimaNueAlgorithm.logger.Info("Difference", "Forecasted metric", forecastMetric.Value, "Real metric", testMetricSeries[index].Value)
 
 			// MSE calculation
-			error := forecast_metric.Value - testMetricSeries[index].Value
+			error := forecastMetric.Value - testMetricSeries[index].Value
 			sumSquaredError += error * error
 
 			// Variance calculation
-			deviation := forecast_metric.Value - meanForecast
+			deviation := forecastMetric.Value - meanForecast
 			sumSquaredDeviation += deviation * deviation
 		}
 
-		mse := sumSquaredError / float64(len(forecast_metrics))
-		variance := sumSquaredDeviation / float64(len(forecast_metrics))
+		mse := sumSquaredError / float64(len(forecastMetrics))
+		variance := sumSquaredDeviation / float64(len(forecastMetrics))
 
 		SarimaNueAlgorithm.logger.Info("Statistics", "MSE", mse, "Variance", variance)
 
