@@ -385,6 +385,251 @@ func main() {
 
 ## Advanced Topics
 
+### Using Configuration Files
+
+Plugins can load additional configuration from YAML files stored in `plugin/collectors/config/`. This is useful for managing complex settings like target lists, endpoint configurations, or algorithm parameters that you don't want to hardcode.
+
+#### Configuration File Location and Naming
+
+Configuration files must follow this naming convention:
+
+```
+plugin/collectors/config/<PLUGIN_NAME>.yaml
+```
+
+**Examples:**
+- `FAKE_test_collector.yaml` for `FAKE_test_collector.go`
+- `HPE_amf_collector.yaml` for `HPE_amf_collector.go`
+- `F5GC_smf_collector.yaml` for `F5GC_smf_collector.go`
+
+The configuration file name **must match** the plugin name exactly.
+
+#### Loading Configuration
+
+Add a `loadConfig()` method to your collector:
+
+```go
+import (
+    "fmt"
+    "os"
+    "path/filepath"
+    "gopkg.in/yaml.v3"
+)
+
+// Define your configuration structure
+type MyConfig struct {
+    Targets []plugin_shared.Target `yaml:"targets"`
+    // Add other configuration fields as needed
+}
+
+func (collector *MyCollector) loadConfig() error {
+    // Config file path: plugin/collectors/config/MY_PLUGIN.yaml
+    configPath := filepath.Join("plugin", "collectors", "config", "MY_PLUGIN.yaml")
+    
+    collector.logger.Debug("Loading config", "path", configPath)
+    
+    // Read the file
+    data, err := os.ReadFile(configPath)
+    if err != nil {
+        return fmt.Errorf("failed to read config file: %w", err)
+    }
+    
+    // Parse YAML
+    var config MyConfig
+    if err := yaml.Unmarshal(data, &config); err != nil {
+        return fmt.Errorf("failed to parse YAML: %w", err)
+    }
+    
+    // Store the configuration
+    collector.targets = config.Targets
+    return nil
+}
+
+func (collector *MyCollector) SetEnvironment(debugMode bool) {
+    // ... existing environment setup ...
+    
+    // Load configuration file
+    if err := collector.loadConfig(); err != nil {
+        collector.logger.Warn("Failed to load config", "error", err)
+        // Decide if you want to continue with defaults or exit
+    }
+}
+```
+
+#### Example: Managing Target Lists
+
+The `plugin_shared.Target` struct is available for managing HTTP/HTTPS endpoints:
+
+```go
+type MyCollector struct {
+    logger  hclog.Logger
+    targets []plugin_shared.Target
+}
+```
+
+**Configuration file** (`plugin/collectors/config/MY_PLUGIN.yaml`):
+
+```yaml
+# Configuration for MY_PLUGIN
+targets:
+  # Primary AMF instance
+  - name: "AMF-Primary"
+    url: "https://amf-1.5gcore.local"
+    port: 443
+    path: "/api/v1/metrics"
+    description: "Primary AMF instance"
+    enabled: true
+
+  # Secondary AMF instance
+  - name: "AMF-Secondary"
+    url: "https://amf-2.5gcore.local"
+    port: 443
+    path: "/api/v1/metrics"
+    description: "Secondary AMF instance for redundancy"
+    enabled: true
+
+  # Disabled instance (for maintenance)
+  - name: "AMF-Test"
+    url: "https://amf-test.5gcore.local"
+    port: 8443
+    path: "/api/v1/metrics"
+    description: "Test AMF instance"
+    enabled: false
+```
+
+**Using targets in your collector:**
+
+```go
+func (collector *MyCollector) Collect() []models.Metric {
+    metrics := []models.Metric{}
+    
+    // Iterate only over enabled targets
+    enabledTargets := plugin_shared.GetEnabledTargets(collector.targets)
+    
+    for _, target := range enabledTargets {
+        collector.logger.Debug("Collecting from target", 
+            "name", target.Name, 
+            "url", target.GetFullURL())
+        
+        targetMetrics := collector.collectFromTarget(target)
+        metrics = append(metrics, targetMetrics...)
+    }
+    
+    return metrics
+}
+
+func (collector *MyCollector) collectFromTarget(target plugin_shared.Target) []models.Metric {
+    // Make HTTP request to target.GetFullURL()
+    // Parse response and return metrics
+}
+```
+
+**Target helper functions:**
+
+```go
+// Get only enabled targets
+enabled := plugin_shared.GetEnabledTargets(collector.targets)
+
+// Find specific target by name
+target := plugin_shared.GetTargetByName(collector.targets, "AMF-Primary")
+if target != nil {
+    fullURL := target.GetFullURL()  // Returns complete URL with port and path
+}
+```
+
+#### Example: Custom Configuration Structure
+
+For more complex configurations:
+
+```yaml
+# plugin/collectors/config/MY_PLUGIN.yaml
+collection:
+  interval_seconds: 30
+  timeout_seconds: 10
+  retry_attempts: 3
+
+endpoints:
+  amf:
+    base_url: "https://amf.5gcore.local"
+    api_version: "v1"
+    auth_required: true
+  
+  smf:
+    base_url: "https://smf.5gcore.local"
+    api_version: "v2"
+    auth_required: true
+
+metrics:
+  include:
+    - "cpu_usage"
+    - "memory_usage"
+    - "active_sessions"
+  exclude:
+    - "debug_counters"
+```
+
+**Corresponding Go structures:**
+
+```go
+type CollectorConfig struct {
+    Collection CollectionSettings `yaml:"collection"`
+    Endpoints  EndpointConfig     `yaml:"endpoints"`
+    Metrics    MetricFilter       `yaml:"metrics"`
+}
+
+type CollectionSettings struct {
+    IntervalSeconds int `yaml:"interval_seconds"`
+    TimeoutSeconds  int `yaml:"timeout_seconds"`
+    RetryAttempts   int `yaml:"retry_attempts"`
+}
+
+type EndpointConfig struct {
+    AMF EndpointInfo `yaml:"amf"`
+    SMF EndpointInfo `yaml:"smf"`
+}
+
+type EndpointInfo struct {
+    BaseURL      string `yaml:"base_url"`
+    APIVersion   string `yaml:"api_version"`
+    AuthRequired bool   `yaml:"auth_required"`
+}
+
+type MetricFilter struct {
+    Include []string `yaml:"include"`
+    Exclude []string `yaml:"exclude"`
+}
+```
+
+#### Error Handling
+
+Decide how to handle missing or invalid configuration:
+
+```go
+func (collector *MyCollector) SetEnvironment(debugMode bool) {
+    // ... other setup ...
+    
+    if err := collector.loadConfig(); err != nil {
+        if errors.Is(err, os.ErrNotExist) {
+            // Config file doesn't exist - use defaults
+            collector.logger.Info("No config file found, using defaults")
+            collector.useDefaultConfig()
+        } else {
+            // Other error - log and potentially exit
+            collector.logger.Error("Failed to load config", "error", err)
+            os.Exit(1)
+        }
+    }
+}
+```
+
+#### Benefits of Configuration Files
+
+1. **Separation of concerns**: Configuration separate from code
+2. **Easy updates**: Change targets without recompiling
+3. **Environment-specific**: Different configs for dev/test/prod
+4. **Version control**: Track configuration changes
+5. **Validation**: YAML parsing catches syntax errors
+
 ### HTTP Client for REST APIs
 
 Many 5G cores expose REST APIs. Here's how to use an HTTP client:

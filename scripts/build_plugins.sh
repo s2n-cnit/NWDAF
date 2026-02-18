@@ -41,7 +41,7 @@ else
 fi
 
 # Check Go version
-GO_VERSION=$($GO_BIN version 2>/dev/null | awk '{print $3}' | sed 's/go//')
+GO_VERSION=$("$GO_BIN" version 2>/dev/null | awk '{print $3}' | sed 's/go//')
 if [ -n "$GO_VERSION" ]; then
     echo -e "Go version: ${GREEN}${GO_VERSION}${NC}"
 else
@@ -61,10 +61,8 @@ build_plugins_in_dir() {
         return 1
     fi
 
-    cd "$plugin_dir"
-
     # Create build directory
-    mkdir -p build
+    mkdir -p "$plugin_dir/build"
 
     # Count plugins
     plugin_count=0
@@ -72,29 +70,30 @@ build_plugins_in_dir() {
     fail_count=0
 
     # Build each .go file
-    for plugin_file in *.go; do
+    for plugin_file in "$plugin_dir"/*.go; do
         # Skip if no .go files found
         [ -e "$plugin_file" ] || continue
 
         plugin_count=$((plugin_count + 1))
-        plugin_name="${plugin_file%.go}"
+        plugin_name=$(basename "${plugin_file%.go}")
+        plugin_relative_path="${plugin_file#$PROJECT_ROOT/}"
 
         echo -n "  Building: ${plugin_name}... "
 
         # Print the build command with working directory
         echo ""
-        echo -e "  ${BLUE}Working directory: $(pwd)${NC}"
-        echo -e "  ${BLUE}Command: CGO_ENABLED=0 $GO_BIN build -ldflags=\"-s -w\" -o \"build/${plugin_name}\" \"$plugin_file\"${NC}"
+        echo -e "  ${BLUE}Working directory: $PROJECT_ROOT${NC}"
+        echo -e "  ${BLUE}Command: CGO_ENABLED=0 $GO_BIN build -ldflags=\"-s -w\" -o \"${plugin_dir#$PROJECT_ROOT/}/build/${plugin_name}\" \"./${plugin_relative_path}\"${NC}"
         echo -n "  "
 
-        # Build with optimizations and static linking for Alpine compatibility
+        # Build from project root to maintain module context
         # CGO_ENABLED=0 ensures static binaries that work in musl-based containers
-        BUILD_OUTPUT=$(CGO_ENABLED=0 $GO_BIN build -ldflags="-s -w" -o "build/${plugin_name}" "$plugin_file" 2>&1)
+        BUILD_OUTPUT=$(cd "$PROJECT_ROOT" && CGO_ENABLED=0 "$GO_BIN" build -ldflags="-s -w" -o "${plugin_dir#$PROJECT_ROOT/}/build/${plugin_name}" "./${plugin_relative_path}" 2>&1)
         BUILD_EXIT_CODE=$?
 
         if [ $BUILD_EXIT_CODE -eq 0 ]; then
             # Make executable (important for Docker mounting)
-            chmod +x "build/${plugin_name}"
+            chmod +x "$plugin_dir/build/${plugin_name}"
             echo -e "${GREEN}✓${NC}"
             success_count=$((success_count + 1))
         else
@@ -114,7 +113,6 @@ build_plugins_in_dir() {
     echo -e "  Total: $plugin_count | ${GREEN}Success: $success_count${NC} | ${RED}Failed: $fail_count${NC}"
     echo ""
 
-    cd "$PROJECT_ROOT"
     return 0
 }
 

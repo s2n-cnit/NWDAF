@@ -1,0 +1,52 @@
+# Configuration for FAKE_test_collector plugin
+# Defines remote HTTP/HTTPS targets to monitor
+
+targets:
+  # Example AMF target
+  - name: "AMF-Primary"
+    url: "https://amf.5gcore.local"
+    port: 443
+    path: "/api/v1/metrics"
+    description: "Primary Access and Mobility Management Function"
+    enabled: true
+
+  # Example SMF target
+  - name: "SMF-Primary"
+    url: "https://smf.5gcore.local"
+    port: 443
+    path: "/api/v1/metrics"
+    description: "Primary Session Management Function"
+    enabled: true
+
+  # Example UPF target
+  - name: "UPF-Edge-01"
+    url: "https://upf-01.5gcore.local"
+    port: 8443
+    path: "/monitoring/stats"
+    description: "Edge User Plane Function 01"
+    enabled: true
+
+  # Example AUSF target
+  - name: "AUSF-Main"
+    url: "https://ausf.5gcore.local"
+    port: 443
+    path: "/metrics"
+    description: "Authentication Server Function"
+    enabled: true
+
+  # Example disabled target for testing
+  - name: "Test-Server"
+    url: "http://localhost"
+    port: 8080
+    path: "/test/metrics"
+    description: "Local test server (disabled)"
+    enabled: false
+
+  # Example Prometheus exporter
+  - name: "Node-Exporter"
+    url: "http://monitoring.local"
+    port: 9100
+    path: "/metrics"
+    description: "Prometheus Node Exporter"
+    enabled: true
+

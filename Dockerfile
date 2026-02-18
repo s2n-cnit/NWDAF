@@ -44,8 +44,10 @@ WORKDIR /app
 # Create necessary directories for plugin mounting and service binaries
 RUN mkdir -p /app/plugin/collectors/build \
              /app/plugin/analytics/build \
+             /app/cmd/dcollector/config \
              /app/cmd/dcollector/build \
              /app/cmd/darchiver/build \
+             /app/cmd/darchiver/config \
              /app/cmd/analytics_engine/build \
              /app/config \
              /app/web && \
@@ -61,6 +63,8 @@ COPY --from=builder --chown=nwdaf:nwdaf /build/cmd/analytics_engine/build/analyt
 
 # Copy default configuration file
 COPY --chown=nwdaf:nwdaf config/config.yaml /app/config/config.yaml
+COPY --chown=nwdaf:nwdaf plugin/collectors/config plugin/collectors/config
+COPY --chown=nwdaf:nwdaf plugin/analytics/config plugin/analytics/config
 
 # Copy web assets (directory exists in repo)
 COPY --chown=nwdaf:nwdaf web /app/web

@@ -533,6 +533,209 @@ func main() {
 
 ## Advanced Topics
 
+### Using Configuration Files
+
+Analytics plugins can load algorithm parameters and settings from YAML files stored in `plugin/analytics/config/`. This is useful for managing complex configurations like model parameters, thresholds, or feature settings.
+
+#### Configuration File Location and Naming
+
+Configuration files must follow this naming convention:
+
+```
+plugin/analytics/config/<PLUGIN_NAME>.yaml
+```
+
+**Examples:**
+- `FAKE_SARIMA_number_ue.yaml` for `FAKE_SARIMA_number_ue.go`
+- `HPE_SARIMA_connected_ue.yaml` for `HPE_SARIMA_connected_ue.go`
+- `FAKE_moving_average.yaml` for `FAKE_moving_average.go`
+
+The configuration file name **must match** the plugin name exactly.
+
+#### Loading Configuration
+
+Add a `loadConfig()` method to your analytics plugin:
+
+```go
+import (
+    "fmt"
+    "os"
+    "path/filepath"
+    "gopkg.in/yaml.v3"
+)
+
+// Define your configuration structure
+type AnalyticsConfig struct {
+    Algorithm AlgorithmParams `yaml:"algorithm"`
+    Buffer    BufferSettings  `yaml:"buffer"`
+}
+
+type AlgorithmParams struct {
+    WindowSize     int     `yaml:"window_size"`
+    MinimumSamples int     `yaml:"minimum_samples"`
+    Threshold      float64 `yaml:"threshold"`
+    // Add algorithm-specific parameters
+}
+
+type BufferSettings struct {
+    MaxAge    string `yaml:"max_age"`      // e.g., "1h", "30m"
+    MaxSize   int    `yaml:"max_size"`
+}
+
+func (p *MyAnalytics) loadConfig() error {
+    // Config file path: plugin/analytics/config/MY_PLUGIN.yaml
+    configPath := filepath.Join("plugin", "analytics", "config", "MY_PLUGIN.yaml")
+    
+    p.logger.Debug("Loading config", "path", configPath)
+    
+    // Read the file
+    data, err := os.ReadFile(configPath)
+    if err != nil {
+        return fmt.Errorf("failed to read config file: %w", err)
+    }
+    
+    // Parse YAML
+    var config AnalyticsConfig
+    if err := yaml.Unmarshal(data, &config); err != nil {
+        return fmt.Errorf("failed to parse YAML: %w", err)
+    }
+    
+    // Apply configuration
+    p.windowSize = config.Algorithm.WindowSize
+    p.minimumSamples = config.Algorithm.MinimumSamples
+    p.threshold = config.Algorithm.Threshold
+    
+    return nil
+}
+
+func (p *MyAnalytics) SetEnvironment(debugMode bool) {
+    // ... existing environment setup ...
+    
+    // Load configuration file
+    if err := p.loadConfig(); err != nil {
+        p.logger.Warn("Failed to load config", "error", err)
+        // Use defaults or exit based on requirements
+    }
+}
+```
+
+#### Example: SARIMA Model Configuration
+
+**Configuration file** (`plugin/analytics/config/MY_SARIMA_plugin.yaml`):
+
+```yaml
+# SARIMA Model Configuration
+algorithm:
+  window_size: 100
+  minimum_samples: 20
+  forecast_steps: 5
+  
+  # SARIMA(p,d,q)(P,D,Q)m parameters
+  p: 1  # AR order
+  d: 1  # Differencing order
+  q: 1  # MA order
+  P: 1  # Seasonal AR order
+  D: 1  # Seasonal differencing order
+  Q: 1  # Seasonal MA order
+  m: 24 # Seasonality period
+
+buffer:
+  max_age: "2h"
+  max_size: 200
+
+thresholds:
+  confidence_level: 0.95
+  min_variance: 0.01
+```
+
+**Loading SARIMA config:**
+
+```go
+type SARIMAConfig struct {
+    Algorithm struct {
+        WindowSize     int `yaml:"window_size"`
+        MinimumSamples int `yaml:"minimum_samples"`
+        ForecastSteps  int `yaml:"forecast_steps"`
+        P              int `yaml:"p"`
+        D              int `yaml:"d"`
+        Q              int `yaml:"q"`
+        SP             int `yaml:"P"`
+        SD             int `yaml:"D"`
+        SQ             int `yaml:"Q"`
+        M              int `yaml:"m"`
+    } `yaml:"algorithm"`
+    Buffer struct {
+        MaxAge  string `yaml:"max_age"`
+        MaxSize int    `yaml:"max_size"`
+    } `yaml:"buffer"`
+    Thresholds struct {
+        ConfidenceLevel float64 `yaml:"confidence_level"`
+        MinVariance     float64 `yaml:"min_variance"`
+    } `yaml:"thresholds"`
+}
+```
+
+#### Example: Moving Average Configuration
+
+**Configuration file** (`plugin/analytics/config/MY_moving_average.yaml`):
+
+```yaml
+# Moving Average Configuration
+algorithm:
+  window_size: 10
+  minimum_samples: 5
+  type: "simple"  # simple, exponential, weighted
+
+weights:
+  # For weighted moving average
+  - 0.1
+  - 0.15
+  - 0.2
+  - 0.25
+  - 0.3
+
+smoothing_factor: 0.3  # For exponential moving average
+```
+
+#### When to Use Configuration Files
+
+**Use configuration files for:**
+- Algorithm parameters (SARIMA orders, window sizes)
+- Model hyperparameters
+- Threshold values
+- Feature flags
+- Complex nested settings
+
+**Use environment variables for:**
+- Credentials
+- Simple on/off toggles
+- Deployment-specific values
+
+**Best practice**: Combine both - environment variables override config file values when present.
+
+#### Configuration Priority
+
+Implement a priority system:
+
+```go
+func (p *MyAnalytics) SetEnvironment(debugMode bool) {
+    // 1. Load defaults
+    p.windowSize = 100
+    p.minimumSamples = 20
+    
+    // 2. Load from config file (overrides defaults)
+    if err := p.loadConfig(); err == nil {
+        p.logger.Info("Loaded config from file")
+    }
+    
+    // 3. Load from environment variables (overrides config file)
+    if envWindow := configuration.GetEnvInt(plugin_shared.EnvAnalyticsWindowSize, 0); envWindow > 0 {
+        p.windowSize = envWindow
+        p.logger.Info("Window size overridden by env var", "value", envWindow)
+    }
+}
+```
+
 ### Time-Series Buffer Management
 
 Efficient buffer management is crucial:

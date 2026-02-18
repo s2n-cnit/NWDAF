@@ -1,8 +1,10 @@
 package main
 
 import (
+	"fmt"
 	"math/rand"
 	"os"
+	"path/filepath"
 	"time"
 
 	"github.com/hashicorp/go-hclog"
@@ -10,6 +12,7 @@ import (
 	"github.com/s2n-cnit/nwdaf/pkg/configuration"
 	"github.com/s2n-cnit/nwdaf/pkg/models"
 	"github.com/s2n-cnit/nwdaf/plugin/plugin_shared"
+	"gopkg.in/yaml.v3"
 )
 
 // FakeCollector is a fake collector for testing purposes that generates random metrics.
@@ -18,6 +21,7 @@ type FakeCollector struct {
 	bufferedLogger *plugin_shared.BufferedLogger
 	metricPrefix   string
 	random         *rand.Rand
+	targets        []plugin_shared.Target // List of remote targets to monitor
 }
 
 var (
@@ -43,6 +47,19 @@ func (collector *FakeCollector) SetEnvironment(debugMode bool) {
 	collector.logger.SetLevel(hclog.Level(configuration.GetEnvInt(configuration.EnvLogLevel, int(hclog.Debug))))
 	collector.metricPrefix = configuration.GetEnv(configuration.EnvMetricPrefix, "NWDAF_")
 
+	// Load targets from configuration file
+	if err := collector.loadTargets(); err != nil {
+		collector.logger.Error("Failed to load targets from config", "error", err)
+		collector.logger.Info("Continuing without configured targets - using defaults")
+	} else {
+		collector.logger.Info("Loaded targets", "count", len(collector.targets))
+		for _, target := range collector.targets {
+			if target.Enabled {
+				collector.logger.Debug("Target loaded", "name", target.Name, "url", target.GetFullURL())
+			}
+		}
+	}
+
 	// Skip cookie setup in debug mode
 	if !debugMode {
 		cookieName := configuration.GetEnvStrNoDefault(plugin_shared.EnvMagicCookieKeyName)
@@ -60,6 +77,29 @@ func (collector *FakeCollector) SetEnvironment(debugMode bool) {
 	}
 }
 
+// loadTargets loads target configuration from YAML file
+func (collector *FakeCollector) loadTargets() error {
+	// Determine config file path - look in plugin/collectors/config directory
+	configPath := filepath.Join("plugin", "collectors", "config", "FAKE_test_collector.yaml")
+
+	collector.logger.Debug("Loading targets from config", "path", configPath)
+
+	// Read the config file
+	data, err := os.ReadFile(configPath)
+	if err != nil {
+		return fmt.Errorf("failed to read config file: %w", err)
+	}
+
+	// Parse YAML
+	var config plugin_shared.TargetConfig
+	if err := yaml.Unmarshal(data, &config); err != nil {
+		return fmt.Errorf("failed to parse YAML config: %w", err)
+	}
+
+	collector.targets = config.Targets
+	return nil
+}
+
 // main is the entry point for the FakeCollector application.
 func main() {
 	debugLocally := false
@@ -71,6 +111,13 @@ func main() {
 	}
 
 	FakeTestCollector.SetEnvironment(debugLocally)
+
+	currentDir, err := os.Getwd()
+	if err != nil {
+		FakeTestCollector.logger.Error("Failed to get current directory", "error", err)
+	} else {
+		FakeTestCollector.logger.Info("Current directory", "path", currentDir)
+	}
 
 	// If run as a standalone program, collect metrics locally, if loaded as a plugin, serve the plugin
 	if debugLocally {
@@ -93,6 +140,22 @@ func main() {
 // Collect generates fake metrics for testing purposes.
 func (collector *FakeCollector) Collect() []models.Metric {
 	collector.logger.Debug("Collecting fake metrics for testing")
+
+	// Log active targets
+	activeTargets := 0
+	for _, target := range collector.targets {
+		if target.Enabled {
+			activeTargets++
+			collector.logger.Info("Would collect from target",
+				"name", target.Name,
+				"url", target.GetFullURL())
+		}
+	}
+	if activeTargets > 0 {
+		collector.logger.Debug("Active targets available", "count", activeTargets)
+	}
+
+	//FAKE COllection from targets
 
 	metrics := []models.Metric{
 		{

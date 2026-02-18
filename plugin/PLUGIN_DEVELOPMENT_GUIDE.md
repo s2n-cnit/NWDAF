@@ -285,6 +285,166 @@ func (p *MyPlugin) GetRequiredEnvVars() []string {
 }
 ```
 
+### Step 4.5: Add Configuration Files (Optional)
+
+For complex configurations, plugins can use YAML configuration files instead of or in addition to environment variables.
+
+#### Configuration File Location and Naming
+
+Configuration files must be placed in the appropriate config directory and follow the naming convention:
+
+**For collector plugins:**
+```
+plugin/collectors/config/<PLUGIN_NAME>.yaml
+```
+
+**For analytics plugins:**
+```
+plugin/analytics/config/<PLUGIN_NAME>.yaml
+```
+
+The configuration file name **must exactly match** the plugin filename (without the `.go` extension).
+
+**Examples:**
+- `FAKE_test_collector.yaml` for `FAKE_test_collector.go`
+- `HPE_SARIMA_connected_ue.yaml` for `HPE_SARIMA_connected_ue.go`
+
+#### Loading Configuration
+
+Add a configuration loading method to your plugin:
+
+```go
+import (
+    "fmt"
+    "os"
+    "path/filepath"
+    "gopkg.in/yaml.v3"
+    "github.com/s2n-cnit/nwdaf/plugin/plugin_shared"
+)
+
+// Define configuration structure
+type MyPluginConfig struct {
+    Targets []plugin_shared.Target `yaml:"targets"`
+    // Add your custom fields
+    Setting1 string `yaml:"setting1"`
+    Setting2 int    `yaml:"setting2"`
+}
+
+func (p *MyPlugin) loadConfig() error {
+    // For collectors: plugin/collectors/config/MY_PLUGIN.yaml
+    // For analytics:  plugin/analytics/config/MY_PLUGIN.yaml
+    configPath := filepath.Join("plugin", "collectors", "config", "MY_PLUGIN.yaml")
+    
+    p.logger.Debug("Loading config from file", "path", configPath)
+    
+    data, err := os.ReadFile(configPath)
+    if err != nil {
+        return fmt.Errorf("failed to read config: %w", err)
+    }
+    
+    var config MyPluginConfig
+    if err := yaml.Unmarshal(data, &config); err != nil {
+        return fmt.Errorf("failed to parse YAML: %w", err)
+    }
+    
+    // Store configuration in plugin
+    p.targets = config.Targets
+    p.setting1 = config.Setting1
+    
+    return nil
+}
+```
+
+Call `loadConfig()` during plugin initialization:
+
+```go
+func (p *MyPlugin) SetEnvironment(debugMode bool) {
+    // ... load environment variables ...
+    
+    // Load configuration file
+    if err := p.loadConfig(); err != nil {
+        p.logger.Warn("Failed to load config file", "error", err)
+        // Decide: use defaults or exit
+    }
+}
+```
+
+#### Example Configuration File
+
+```yaml
+# Configuration for MY_PLUGIN
+# This file is automatically loaded on plugin startup
+
+targets:
+  - name: "Primary-Target"
+    url: "https://target1.example.com"
+    port: 443
+    path: "/api/v1/metrics"
+    description: "Primary data source"
+    enabled: true
+    
+  - name: "Secondary-Target"
+    url: "https://target2.example.com"
+    port: 8443
+    path: "/metrics"
+    description: "Backup data source"
+    enabled: false
+
+setting1: "custom_value"
+setting2: 42
+```
+
+#### Using Shared Target Structure
+
+The `plugin_shared` package provides a reusable `Target` structure for HTTP/HTTPS endpoints:
+
+```go
+// Available in plugin_shared/target.go
+type Target struct {
+    Name        string `yaml:"name"`
+    URL         string `yaml:"url"`
+    Port        int    `yaml:"port"`
+    Path        string `yaml:"path"`
+    Description string `yaml:"description"`
+    Enabled     bool   `yaml:"enabled"`
+}
+
+// Helper methods
+func (t *Target) GetFullURL() string
+func GetEnabledTargets(targets []Target) []Target
+func GetTargetByName(targets []Target, name string) *Target
+```
+
+Use targets in your plugin:
+
+```go
+// Get only enabled targets
+enabled := plugin_shared.GetEnabledTargets(p.targets)
+
+// Iterate and use
+for _, target := range enabled {
+    url := target.GetFullURL()  // Complete URL with port and path
+    // Make HTTP request to url
+}
+```
+
+#### When to Use Configuration Files vs Environment Variables
+
+**Use environment variables for:**
+- Credentials (passwords, tokens)
+- Host addresses and ports
+- Simple on/off flags
+- Deployment-specific settings
+
+**Use configuration files for:**
+- Lists of targets or endpoints
+- Complex nested structures
+- Algorithm parameters
+- Metric filters and mappings
+- Settings that change frequently
+
+**Best practice**: Use both - environment variables for secrets, configuration files for structure.
+
 ### Step 5: Test Locally
 
 Use debug mode to test without the main application:
