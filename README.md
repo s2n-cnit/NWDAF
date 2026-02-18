@@ -315,6 +315,29 @@ For detailed documentation, see [web/README.md](web/README.md).
 
 ---
 
+## Quick Start with Docker
+
+Want to get NWDAF running quickly? Follow the [Quick Start Guide](QUICKSTART.md) for a streamlined Docker Compose setup.
+
+**In 5 minutes you'll have:**
+- ✅ All plugins built
+- ✅ Redis and Prometheus running
+- ✅ NWDAF with all microservices operational
+- ✅ Web dashboard with real-time metrics
+- ✅ REST APIs ready for integration
+
+```bash
+# Quick commands
+bash scripts/build_plugins.sh all
+docker compose -f docker-compose.infra.yml up -d
+docker compose up -d
+# Open http://localhost:8080
+```
+
+For detailed instructions, plugin development workflow, and troubleshooting, see **[QUICKSTART.md](QUICKSTART.md)**.
+
+---
+
 ## Installation
 
 ### Prerequisites

@@ -51,6 +51,12 @@ type AnalyticsAlgorithm interface {
 	// Returns a map where keys are metric names and values are descriptions.
 	// If a metric is not in the map, a default description will be used.
 	GetMetricDescriptions() map[string]string
+
+	// GetStartupLogs returns buffered logs from plugin initialization.
+	// This is called by the host after RPC handshake completes to retrieve
+	// any warnings or info messages that occurred during SetEnvironment().
+	// The buffer is cleared after this call.
+	GetStartupLogs() []StartupLog
 }
 
 // AnalyticsAlgorithmRPC is the RPC client implementation of AnalyticsAlgorithm.
@@ -151,6 +157,17 @@ func (g *AnalyticsAlgorithmRPC) GetMetricDescriptions() map[string]string {
 	return resp
 }
 
+// GetStartupLogs calls the remote GetStartupLogs method via RPC.
+func (g *AnalyticsAlgorithmRPC) GetStartupLogs() []StartupLog {
+	var resp []StartupLog
+	err := g.client.Call("Plugin.GetStartupLogs", new(interface{}), &resp)
+	if err != nil {
+		// Return empty slice if method not implemented (backward compatibility)
+		return []StartupLog{}
+	}
+	return resp
+}
+
 // AnalyticsAlgorithmRPCServer is the RPC server that AnalyticsAlgorithmRPC talks to.
 type AnalyticsAlgorithmRPCServer struct {
 	Impl AnalyticsAlgorithm
@@ -207,6 +224,12 @@ func (s *AnalyticsAlgorithmRPCServer) GetProducedMetrics(args interface{}, resp 
 // GetMetricDescriptions calls GetMetricDescriptions on the implementation.
 func (s *AnalyticsAlgorithmRPCServer) GetMetricDescriptions(args interface{}, resp *map[string]string) error {
 	*resp = s.Impl.GetMetricDescriptions()
+	return nil
+}
+
+// GetStartupLogs calls GetStartupLogs on the implementation.
+func (s *AnalyticsAlgorithmRPCServer) GetStartupLogs(args interface{}, resp *[]StartupLog) error {
+	*resp = s.Impl.GetStartupLogs()
 	return nil
 }
 

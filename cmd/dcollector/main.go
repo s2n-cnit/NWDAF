@@ -48,7 +48,7 @@ var (
 )
 
 func SetEnvironment() {
-	configuration.LoadEnv()
+	configuration.LoadEnvWithLogger(logger, "Data Collector")
 	metricsPrefix = configuration.GetEnv(configuration.EnvMetricPrefix, "NWDAF_")
 	logger.SetLevel(hclog.Level(configuration.GetEnvInt(configuration.EnvLogLevel, int(hclog.Debug))))
 
@@ -151,36 +151,65 @@ func LoadPlugin(file os.DirEntry) *plugin.Client {
 	// Start the RPC client for the plugin.
 	rpcClient, err := client.Client()
 	if err != nil {
-		logger.Error("Error starting RPC for", "plugin", client, "error", err)
+		logger.Error("Error starting RPC client, skipping plugin", "plugin", file.Name(), "error", err)
+		return client
 	}
 	rpcClientList = append(rpcClientList, &rpcClient)
 
 	// Dispense the plugin and add it to the plugin list.
 	LoadedPlugin, err := rpcClient.Dispense(file.Name())
 	if err != nil {
-		logger.Error("Error loading remote plugin", "plugin", file.Name(), "error", err)
+		logger.Error("Error dispensing plugin, skipping", "plugin", file.Name(), "error", err)
+		client.Kill()
 		return client
 	}
 
 	// Check if LoadedPlugin is nil
 	if LoadedPlugin == nil {
-		logger.Error("Plugin dispense returned nil", "plugin", file.Name())
+		logger.Error("Plugin dispense returned nil, skipping", "plugin", file.Name())
+		client.Kill()
 		return client
 	}
 
-	//Check if all required environment variables are set for the specific plugin and SET THEM
-	plugin_enabled := true
-	for _, envVar := range LoadedPlugin.(shared2.MetricCollector).GetRequiredEnvVars() {
+	// Type assertion with safety check
+	metricCollector, ok := LoadedPlugin.(shared2.MetricCollector)
+	if !ok {
+		logger.Error("Plugin does not implement MetricCollector interface, skipping", "plugin", file.Name())
+		client.Kill()
+		return client
+	}
+
+	// Retrieve and print buffered startup logs from plugin initialization
+	startupLogs := metricCollector.GetStartupLogs()
+	for _, log := range startupLogs {
+		logMessage := fmt.Sprintf("[PLUGIN:%s][STARTUP] %s", file.Name(), log.Message)
+		switch log.Level {
+		case "WARN":
+			logger.Warn(logMessage, "timestamp", log.Timestamp, "fields", log.Fields)
+		case "INFO":
+			logger.Info(logMessage, "timestamp", log.Timestamp, "fields", log.Fields)
+		default:
+			logger.Debug(logMessage, "timestamp", log.Timestamp, "fields", log.Fields)
+		}
+	}
+
+	// Check if all required environment variables are set for the specific plugin
+	pluginEnabled := true
+	for _, envVar := range metricCollector.GetRequiredEnvVars() {
 		_, exists := configuration.GetEnvNoDefault(envVar)
 		if !exists {
 			logger.Error("Required environment variable not set for plugin", "plugin", file.Name(), "envVar", envVar)
-			plugin_enabled = false
+			pluginEnabled = false
 			break
 		}
 	}
 	// If all required environment variables are set, add the plugin to the plugin list.
-	if plugin_enabled {
+	if pluginEnabled {
 		pluginList = append(pluginList, LoadedPlugin)
+		logger.Info("Plugin successfully loaded and enabled", "plugin", file.Name())
+	} else {
+		logger.Warn("Plugin loaded but disabled due to missing environment variables", "plugin", file.Name())
+		client.Kill()
 	}
 	return client
 }

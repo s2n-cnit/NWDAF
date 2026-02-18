@@ -445,6 +445,7 @@ func (p *MyPlugin) GetName() string {
 2. **Use constants**: Define metric names and descriptions as constants
 3. **Validate inputs**: Check environment variables and metric data
 4. **Handle errors gracefully**: Log errors, don't panic in production code
+5. **Use unique variable names**: When defining global variables (like `SubscribedMetrics`), prefix them with your plugin name (e.g., `MyPluginSubscribedMetrics`) to avoid conflicts with other plugins in the same directory
 
 ### Performance
 

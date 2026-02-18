@@ -45,10 +45,36 @@ func CommonEnv(redisUri string, coreType plugin_shared.CoreType, prometheusLocal
 
 // LoadEnv loads environment variables from a .env file if it exists
 func LoadEnv() {
+	LoadEnvWithLogger(logger)
+}
+
+// LoadEnvWithLogger loads environment variables from a .env file if it exists, using the provided logger for warnings.
+// The optional context parameter can be used to identify which component is loading the environment (e.g., plugin name).
+func LoadEnvWithLogger(customLogger hclog.Logger, context ...string) {
 	// Load .env file if using godotenv injecting environment variables
 	err := godotenv.Load()
 	if err != nil {
-		logger.Error(".env file not found, environment variables should be set directly.")
+		msg := ".env file not found, environment variables should be set directly."
+		if len(context) > 0 && context[0] != "" {
+			msg = context[0] + ": " + msg
+		}
+		customLogger.Warn(msg)
+	}
+}
+
+// LoadEnvWithBufferedLogger loads environment variables from a .env file if it exists,
+// using the provided logger for warnings. This allows plugins to use a buffered
+// logger during initialization to avoid interfering with RPC handshake.
+// The optional context parameter can be used to identify which plugin is loading the environment (e.g., plugin name).
+func LoadEnvWithBufferedLogger(customBufferedLogger *plugin_shared.BufferedLogger, context ...string) {
+	// Load .env file if using godotenv injecting environment variables
+	err := godotenv.Load()
+	if err != nil {
+		msg := ".env file not found, environment variables should be set directly."
+		if len(context) > 0 && context[0] != "" {
+			msg = context[0] + ": " + msg
+		}
+		customBufferedLogger.Warn(msg)
 	}
 }
 

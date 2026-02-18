@@ -14,9 +14,10 @@ import (
 
 // FakeCollector is a fake collector for testing purposes that generates random metrics.
 type FakeCollector struct {
-	logger       hclog.Logger
-	metricPrefix string
-	random       *rand.Rand
+	logger         hclog.Logger
+	bufferedLogger *plugin_shared.BufferedLogger
+	metricPrefix   string
+	random         *rand.Rand
 }
 
 var (
@@ -36,7 +37,9 @@ var (
 )
 
 func (collector *FakeCollector) SetEnvironment(debugMode bool) {
-	configuration.LoadEnv()
+	collector.bufferedLogger = plugin_shared.NewBufferedLogger(collector.logger, debugMode)
+
+	configuration.LoadEnvWithBufferedLogger(collector.bufferedLogger, "FAKE_test_collector")
 	collector.logger.SetLevel(hclog.Level(configuration.GetEnvInt(configuration.EnvLogLevel, int(hclog.Debug))))
 	collector.metricPrefix = configuration.GetEnv(configuration.EnvMetricPrefix, "NWDAF_")
 
@@ -51,22 +54,26 @@ func (collector *FakeCollector) SetEnvironment(debugMode bool) {
 		HandShakeConfigFakeCollector.MagicCookieKey = *cookieName
 		HandShakeConfigFakeCollector.MagicCookieValue = *cookieValue
 	}
+
+	if collector.bufferedLogger != nil {
+		collector.bufferedLogger.StartNormalLogging()
+	}
 }
 
 // main is the entry point for the FakeCollector application.
 func main() {
-	debug_locally := false
+	debugLocally := false
 	args := os.Args[1:]
 	for _, argument := range args {
 		if argument == "--debug-locally" {
-			debug_locally = true
+			debugLocally = true
 		}
 	}
 
-	FakeTestCollector.SetEnvironment(debug_locally)
+	FakeTestCollector.SetEnvironment(debugLocally)
 
 	// If run as a standalone program, collect metrics locally, if loaded as a plugin, serve the plugin
-	if debug_locally {
+	if debugLocally {
 		metrics := FakeTestCollector.Collect()
 		FakeTestCollector.logger.Info("Collected metrics", "count", len(metrics), "metrics", metrics)
 	} else {
@@ -186,6 +193,14 @@ func (collector *FakeCollector) Collect() []models.Metric {
 // The fake collector doesn't require any special environment variables.
 func (collector *FakeCollector) GetRequiredEnvVars() []string {
 	return []string{}
+}
+
+// GetStartupLogs returns buffered logs from plugin initialization.
+func (collector *FakeCollector) GetStartupLogs() []plugin_shared.StartupLog {
+	if collector.bufferedLogger == nil {
+		return []plugin_shared.StartupLog{}
+	}
+	return collector.bufferedLogger.GetStartupLogs()
 }
 
 // randomFloat generates a random float64 between min and max.

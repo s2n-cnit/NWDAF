@@ -1,0 +1,89 @@
+services:
+  # NWDAF Main Application
+  # Prerequisites: Redis must be running (use docker-compose.infra.yml)
+  # Prerequisites: Plugins must be built separately (use scripts/build_plugins.sh)
+  nwdaf:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: nwdaf-app
+    restart: unless-stopped
+
+    ports:
+      - "8080:8080"   # Main HTTP server / Web dashboard
+      - "8081:8081"   # Data Archiver API
+      - "8084:8084"   # Analytics Engine API
+      - "2112:2112"   # Prometheus metrics
+
+    environment:
+      # Logging Configuration
+      # 0=Trace, 1=Debug, 2=Info, 3=Warn, 4=Error
+      LOG_LEVEL: ${LOG_LEVEL:-1}
+
+      # Redis Configuration (External - see docker-compose.infra.yml)
+      REDIS_URI: ${REDIS_URI:-localhost:6379}
+      REDIS_PASSWORD: ${REDIS_PASSWORD:-}
+
+      # Core Type (Free5GC, HPE, O5GS, OAI, FAKE)
+      CORE_TYPE: ${CORE_TYPE:-FAKE}
+
+      # Metrics Configuration
+      METRIC_PREFIX: ${METRIC_PREFIX:-NWDAF_}
+      METRIC_EXPIRATION_SECONDS: ${METRIC_EXPIRATION_SECONDS:-300}
+
+      # Service Ports (internal)
+      PROMETHEUS_LOCAL_PORT: 2112
+      DARCHIVER_API_PORT: 8081
+      ANALYTICS_ENGINE_API_PORT: 8084
+
+      # Core-Specific Configuration
+      # Set these via .env file or environment variables
+
+      # For HPE Core:
+      # HPE_CORE_IP: ${HPE_CORE_IP}
+      # HPE_USERNAME: ${HPE_USERNAME}
+      # HPE_PASSWORD: ${HPE_PASSWORD}
+
+      # For Free5GC:
+      # FREE5GC_AMF_IP: ${FREE5GC_AMF_IP}
+      # FREE5GC_METRIC_PREFIX: ${FREE5GC_METRIC_PREFIX:-F5GC_}
+
+    volumes:
+      # Configuration file (optional - uses embedded default if not mounted)
+      - ./config/config.yaml:/app/config/config.yaml:ro
+
+      # REQUIRED: Mount your pre-built plugins
+      # Build plugins first: ./scripts/build_plugins.sh
+
+      # Collector plugins directory
+      - ./plugin/collectors/build:/app/plugin/collectors/build:ro
+
+      # Analytics plugins directory
+      - ./plugin/analytics/build:/app/plugin/analytics/build:ro
+
+      # Alternative: Mount specific plugins individually
+      # - ./plugin/collectors/build/FAKE_test_collector:/app/plugin/collectors/build/FAKE_test_collector:ro
+      # - ./plugin/analytics/build/FAKE_moving_average:/app/plugin/analytics/build/FAKE_moving_average:ro
+
+      # Web assets (optional - for custom frontend)
+      # - ./web:/app/web:ro
+
+    # Network mode: host allows direct access to Redis on localhost
+    # Change this if Redis is in a Docker network
+    network_mode: "host"
+
+    # Alternative: Use custom network if Redis is also in Docker
+    # networks:
+    #   - nwdaf-net
+
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:8080/"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+# Uncomment if using custom network instead of host mode
+# networks:
+#   nwdaf-net:
+#     external: true  # Created separately or by docker-compose.infra.yml

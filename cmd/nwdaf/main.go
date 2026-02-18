@@ -107,7 +107,7 @@ func main() {
 	logger.Info("Starting NWDAF, PID is ", os.Getpid())
 
 	// Load environment variables and configuration
-	configuration.LoadEnv()
+	configuration.LoadEnvWithLogger(logger, "NWDAF Main")
 	configur, err := configuration.LoadConfig(nil)
 	if err != nil {
 		logger.Error("Error loading configuration", "error", err)
@@ -190,13 +190,13 @@ func StartMonitorSlices(configur *configuration.Config) {
 
 // startMicroservice starts a microservice as a separate process.
 // It takes the path to the executable, a map of environment variables, a boolean to inherit existing environment variables, and the name of the microservice.
-func startMicroservice(path string, envVars map[string]string, inherit_env bool, name string) *exec.Cmd {
+func startMicroservice(path string, envVars map[string]string, inheritEnv bool, name string) *exec.Cmd {
 	cmd := exec.Command(path)
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 
 	// Set environment variables
-	if inherit_env {
+	if inheritEnv {
 		cmd.Env = os.Environ()
 	} // inherit existing environment variables
 	for key, value := range envVars {

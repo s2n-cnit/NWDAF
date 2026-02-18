@@ -9,7 +9,7 @@ import (
 	"github.com/hashicorp/go-hclog"
 	"github.com/hashicorp/go-plugin"
 	"github.com/s2n-cnit/nwdaf/pkg/configuration"
-	http_internal "github.com/s2n-cnit/nwdaf/pkg/http-internal"
+	httpinternal "github.com/s2n-cnit/nwdaf/pkg/http-internal"
 	"github.com/s2n-cnit/nwdaf/pkg/models"
 	"github.com/s2n-cnit/nwdaf/plugin/plugin_shared"
 )
@@ -43,13 +43,14 @@ const (
 
 // HPEAmfCollector collects metrics from HPE 5G Core AMF (Access and Mobility Management Function)
 type HPEAmfCollector struct {
-	logger       hclog.Logger
-	coreIp       *string
-	username     *string
-	password     *string
-	token        string    // OAuth access token for API authentication
-	tokenExpiry  time.Time // When the current token expires
-	metricPrefix string
+	logger         hclog.Logger
+	bufferedLogger *plugin_shared.BufferedLogger
+	coreIp         *string
+	username       *string
+	password       *string
+	token          string    // OAuth access token for API authentication
+	tokenExpiry    time.Time // When the current token expires
+	metricPrefix   string
 }
 
 var (
@@ -67,7 +68,9 @@ var (
 )
 
 func (collector *HPEAmfCollector) SetEnvironment(debugMode bool) {
-	configuration.LoadEnv()
+	collector.bufferedLogger = plugin_shared.NewBufferedLogger(collector.logger, debugMode)
+
+	configuration.LoadEnvWithBufferedLogger(collector.bufferedLogger, "HPE_amf_collector")
 	collector.logger.SetLevel(hclog.Level(configuration.GetEnvInt(configuration.EnvLogLevel, int(hclog.Debug))))
 
 	collector.coreIp = configuration.GetEnvStrNoDefault(plugin_shared.EnvHpeCoreIp)
@@ -90,6 +93,10 @@ func (collector *HPEAmfCollector) SetEnvironment(debugMode bool) {
 		}
 		HandShakeConfigHPEAmfCollector.MagicCookieKey = *cookieName
 		HandShakeConfigHPEAmfCollector.MagicCookieValue = *cookieValue
+	}
+
+	if collector.bufferedLogger != nil {
+		collector.bufferedLogger.StartNormalLogging()
 	}
 }
 
@@ -132,7 +139,7 @@ func (collector *HPEAmfCollector) Login() error {
 	}
 
 	// Send the HTTP request and get the response
-	resp, err := http_internal.HttpRequestJsonBodyResp(url, http_internal.POST, body, nil)
+	resp, err := httpinternal.HttpRequestJsonBodyResp(url, httpinternal.POST, body, nil)
 
 	// Check for errors BEFORE type assertion (critical fix)
 	if err != nil {
@@ -193,6 +200,14 @@ func (collector *HPEAmfCollector) GetRequiredEnvVars() []string {
 	return plugin_shared.HPERequiredEnvVars
 }
 
+// GetStartupLogs returns buffered logs from plugin initialization.
+func (collector *HPEAmfCollector) GetStartupLogs() []plugin_shared.StartupLog {
+	if collector.bufferedLogger == nil {
+		return []plugin_shared.StartupLog{}
+	}
+	return collector.bufferedLogger.GetStartupLogs()
+}
+
 // CollectSupiInfo collects subscriber and device status information from HPE AMF
 // Returns metrics for:
 // - SUPI_NUM: Total number of subscribers
@@ -208,7 +223,7 @@ func (collector *HPEAmfCollector) CollectSupiInfo() []models.Metric {
 	collector.logger.Debug("Fetching SUPI list from HPE AMF")
 
 	// Fetch the list of all SUPIs
-	resp, err := http_internal.HttpRequestJsonBodyResp(supisUrl, http_internal.GET, nil, &collector.token)
+	resp, err := httpinternal.HttpRequestJsonBodyResp(supisUrl, httpinternal.GET, nil, &collector.token)
 	if err != nil {
 		collector.logger.Error("Failed to get SUPIs from HPE AMF", "error", err)
 		return nil
@@ -235,7 +250,7 @@ func (collector *HPEAmfCollector) CollectSupiInfo() []models.Metric {
 		supiDetailUrl := fmt.Sprintf(HPESupiDetailPath, *collector.coreIp, supi)
 
 		// Fetch detailed status for this SUPI
-		supiResp, err := http_internal.HttpRequestJsonBodyResp(supiDetailUrl, http_internal.GET, nil, &collector.token)
+		supiResp, err := httpinternal.HttpRequestJsonBodyResp(supiDetailUrl, httpinternal.GET, nil, &collector.token)
 		if err != nil {
 			// Log error but continue processing other SUPIs
 			collector.logger.Warn("Failed to get SUPI details, skipping",

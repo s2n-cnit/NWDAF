@@ -1,6 +1,6 @@
 module github.com/s2n-cnit/nwdaf
 
-go 1.24.3
+go 1.25
 
 require (
 	github.com/free5gc/openapi v1.0.8

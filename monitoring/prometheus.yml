@@ -1,0 +1,38 @@
+# Prometheus configuration for NWDAF monitoring
+
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+  external_labels:
+    monitor: 'nwdaf-monitor'
+
+# Alerting configuration (optional)
+# alerting:
+#   alertmanagers:
+#     - static_configs:
+#         - targets: ['alertmanager:9093']
+
+# Scrape configurations
+scrape_configs:
+  # NWDAF Prometheus metrics endpoint
+  - job_name: 'nwdaf'
+    static_configs:
+      - targets: ['nwdaf:2112']
+        labels:
+          service: 'nwdaf'
+          environment: 'production'
+
+  # Prometheus self-monitoring
+  - job_name: 'prometheus'
+    static_configs:
+      - targets: ['localhost:9090']
+
+  # Redis exporter (if you add redis_exporter to docker-compose)
+  # - job_name: 'redis'
+  #   static_configs:
+  #     - targets: ['redis-exporter:9121']
+
+  # MongoDB exporter (if you add mongodb_exporter to docker-compose)
+  # - job_name: 'mongodb'
+  #   static_configs:
+  #     - targets: ['mongodb-exporter:9216']

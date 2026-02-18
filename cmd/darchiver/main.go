@@ -175,15 +175,19 @@ func setupAPIRouter() *gin.Engine {
 
 // Start initializes the configuration, subscribes to Redis topics, and starts the Prometheus metric exporter.
 func Start() {
-	// Load the configuration settings.
-	configuration.LoadEnv()
-	// Set the logging level based on the environment variable.
-	logLevel := hclog.Level(configuration.GetEnvInt(configuration.EnvLogLevel, int(hclog.Debug)))
+	// Initialize logger first (before any configuration loading that might use it)
 	logger = hclog.New(&hclog.LoggerOptions{
 		Name:   "Data Archiver",
 		Output: os.Stdout,
-		Level:  logLevel,
+		Level:  hclog.Debug,
 	})
+
+	// Load the configuration settings.
+	configuration.LoadEnvWithLogger(logger, "Data Archiver")
+
+	// Update the logging level based on the environment variable.
+	logLevel := hclog.Level(configuration.GetEnvInt(configuration.EnvLogLevel, int(hclog.Debug)))
+	logger.SetLevel(logLevel)
 
 	// Create a new Redis client with the specified options.
 	redisUri := configuration.GetEnvStrNoDefault(configuration.EnvRedisUri)
@@ -191,8 +195,8 @@ func Start() {
 		logger.Error("Redis URI not set. Missing ENV ", configuration.EnvRedisUri)
 		os.Exit(1)
 	}
-	redis_pwd := configuration.GetEnvStrNoDefault(configuration.EnvRedisPassword)
-	redisClient = redis_custom.NewCustomClient("Data Archiver", logLevel, *redisUri, redis_pwd, &moduleInfo)
+	redisPwd := configuration.GetEnvStrNoDefault(configuration.EnvRedisPassword)
+	redisClient = redis_custom.NewCustomClient("Data Archiver", logLevel, *redisUri, redisPwd, &moduleInfo)
 
 	// Subscribe to the "metrics" and "computedMetrics" Redis topics.
 	pubsub := *redisClient.Subscribe("metrics", "computedMetrics")
