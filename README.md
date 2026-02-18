@@ -1,6 +1,12 @@
-# Multi-Core NWDAF (Network Data Analytics Function)
+<div align="center">
+  <img src="icons/logo.png" alt="NWDAF Logo" width="200"/>
+  
+  # Multi-Core NWDAF (Network Data Analytics Function)
+  
+  A modular and extensible implementation of the 5G Network Data Analytics Function (NWDAF) supporting multiple 5G core network implementations.
+</div>
 
-A modular and extensible implementation of the 5G Network Data Analytics Function (NWDAF) supporting multiple 5G core network implementations.
+> **🚀 New to NWDAF?** Check out the [Quick Start Guide](QUICKSTART.md) to get up and running with Docker Compose in minutes!
 
 ## Table of Contents
 - [Overview](#overview)
